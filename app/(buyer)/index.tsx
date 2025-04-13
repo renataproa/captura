@@ -121,65 +121,67 @@ export default function BuyerHomeScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
-        <ProfileSwitcher currentMode="buyer" />
-        
-        <View style={[styles.header, styles.headerSpacing]}>
-          <Text variant="displaySmall" style={styles.title}>Discover</Text>
-          <IconButton
-            icon={viewMode === 'grid' ? 'view-list' : 'view-grid'}
-            onPress={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            style={styles.viewModeButton}
-            iconColor="#ffffff"
+        <View style={styles.content}>
+          <ProfileSwitcher currentMode="buyer" />
+          
+          <View style={styles.header}>
+            <Text variant="displaySmall" style={styles.title}>Discover</Text>
+            <IconButton
+              icon={viewMode === 'grid' ? 'view-list' : 'view-grid'}
+              onPress={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              style={styles.viewModeButton}
+              iconColor="#ffffff"
+            />
+          </View>
+
+          <View style={styles.searchContainer}>
+            <Searchbar
+              placeholder="Search photo requests by location or category"
+              onChangeText={setSearchQuery}
+              value={searchQuery}
+              style={styles.searchBar}
+              iconColor="#6b4d8f"
+            />
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoriesContainer}
+          >
+            {MOCK_CATEGORIES.map((category) => (
+              <Chip
+                key={category}
+                selected={selectedCategory === category}
+                onPress={() => setSelectedCategory(
+                  selectedCategory === category ? null : category
+                )}
+                style={styles.categoryChip}
+                selectedColor="#6b4d8f"
+              >
+                {category}
+              </Chip>
+            ))}
+          </ScrollView>
+
+          <FlatList
+            data={MOCK_REQUESTS}
+            renderItem={renderPhotoRequest}
+            keyExtractor={(item) => item.id}
+            numColumns={viewMode === 'grid' ? 2 : 1}
+            key={viewMode}
+            contentContainerStyle={styles.photoGrid}
+          />
+
+          <FAB
+            icon="plus"
+            label="New Request"
+            style={styles.fab}
+            onPress={() => {
+              router.push('/create-request');
+            }}
           />
         </View>
-
-        <View style={styles.searchContainer}>
-          <Searchbar
-            placeholder="Search photo requests by location or category"
-            onChangeText={setSearchQuery}
-            value={searchQuery}
-            style={styles.searchBar}
-            iconColor="#6b4d8f"
-          />
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesContainer}
-        >
-          {MOCK_CATEGORIES.map((category) => (
-            <Chip
-              key={category}
-              selected={selectedCategory === category}
-              onPress={() => setSelectedCategory(
-                selectedCategory === category ? null : category
-              )}
-              style={styles.categoryChip}
-              selectedColor="#6b4d8f"
-            >
-              {category}
-            </Chip>
-          ))}
-        </ScrollView>
-
-        <FlatList
-          data={MOCK_REQUESTS}
-          renderItem={renderPhotoRequest}
-          keyExtractor={(item) => item.id}
-          numColumns={viewMode === 'grid' ? 2 : 1}
-          key={viewMode}
-          contentContainerStyle={styles.photoGrid}
-        />
-
-        <FAB
-          icon="plus"
-          label="New Request"
-          style={styles.fab}
-          onPress={() => {
-            router.push('./create-request');
-          }}
-        />
       </LinearGradient>
     </SafeAreaView>
   );
@@ -192,12 +194,15 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
+  content: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingVertical: 16,
   },
   title: {
     color: '#ffffff',
@@ -283,9 +288,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: '#6b4d8f',
-  },
-  headerSpacing: {
-    marginTop: 48,
   },
   urgentBadge: {
     position: 'absolute',
