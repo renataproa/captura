@@ -178,7 +178,7 @@ export default function BuyerHomeScreen() {
             label="New Request"
             style={styles.fab}
             onPress={() => {
-              router.push('/create-request');
+              router.push('/(buyer)/create-request');
             }}
           />
         </View>
