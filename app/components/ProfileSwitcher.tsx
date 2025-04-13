@@ -14,7 +14,11 @@ export default function ProfileSwitcher({ currentMode }: ProfileSwitcherProps) {
   const switchProfile = (mode: 'buyer' | 'seller') => {
     setMenuVisible(false);
     if (mode !== currentMode) {
-      router.replace(mode === 'buyer' ? '/(buyer)' : '/');
+      if (mode === 'buyer') {
+        router.replace('/(buyer)');
+      } else {
+        router.replace('/(tabs)');
+      }
     }
   };
 
