@@ -10,6 +10,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { PhotoMetadata } from '../utils/photoMatching';
 import PhotoValueReport from '../components/PhotoValueReport';
 import { Platform } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -23,57 +24,75 @@ export default function HomeScreen() {
     loadUserPhotos();
   }, []);
 
-  const loadUserPhotos = async () => {
+  const loadUserPhotos = async (uploadedAssets?: ImagePicker.ImagePickerAsset[]) => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      
-      if (status !== 'granted') {
-        console.log('Photo library permission denied');
-        return;
-      }
-      
-      const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: 'photo',
-        first: 50,
-      });
-      
-      const photos: PhotoMetadata[] = await Promise.all(
-        assets.map(async (asset) => {
-          try {
-            const info = await MediaLibrary.getAssetInfoAsync(asset);
-            let uri = info.localUri || asset.uri;
-            
-            // Handle iOS ph:// URIs
-            if (Platform.OS === 'ios' && uri.startsWith('ph://')) {
-              uri = `assets-library://asset/asset.JPG?id=${uri.slice(5)}&ext=JPG`;
-            }
-            
-            return {
-              id: asset.id,
-              creationTime: new Date(asset.creationTime),
-              filename: asset.filename,
-              location: info.location,
-              width: asset.width,
-              height: asset.height,
-              uri: uri,
-            };
-          } catch (error) {
-            console.error(`Error processing photo ${asset.id}:`, error);
-            return {
-              id: asset.id,
-              creationTime: new Date(asset.creationTime),
-              filename: asset.filename,
-              width: asset.width,
-              height: asset.height,
-              uri: asset.uri,
-            };
+      let photos: PhotoMetadata[] = [];
+
+      if (uploadedAssets) {
+        // Handle uploaded photos
+        photos = uploadedAssets.map(asset => ({
+          id: asset.assetId || Date.now().toString(),
+          creationTime: new Date(),
+          filename: asset.uri.split('/').pop() || 'uploaded-photo.jpg',
+          width: asset.width || 800,
+          height: asset.height || 600,
+          uri: asset.uri,
+          location: {
+            latitude: 42.3601, // Default to Boston coordinates
+            longitude: -71.0549
           }
-        })
-      );
-      
+        }));
+      } else {
+        // Handle photo library access
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        
+        if (status !== 'granted') {
+          console.log('Photo library permission denied');
+          return;
+        }
+        
+        const { assets } = await MediaLibrary.getAssetsAsync({
+          mediaType: 'photo',
+          first: 50,
+        });
+        
+        photos = await Promise.all(
+          assets.map(async (asset) => {
+            try {
+              const info = await MediaLibrary.getAssetInfoAsync(asset);
+              let uri = info.localUri || asset.uri;
+              
+              if (Platform.OS === 'ios' && uri.startsWith('ph://')) {
+                uri = `assets-library://asset/asset.JPG?id=${uri.slice(5)}&ext=JPG`;
+              }
+              
+              return {
+                id: asset.id,
+                creationTime: new Date(asset.creationTime),
+                filename: asset.filename,
+                location: info.location,
+                width: asset.width,
+                height: asset.height,
+                uri: uri,
+              };
+            } catch (error) {
+              console.error(`Error processing photo ${asset.id}:`, error);
+              return {
+                id: asset.id,
+                creationTime: new Date(asset.creationTime),
+                filename: asset.filename,
+                width: asset.width,
+                height: asset.height,
+                uri: asset.uri,
+              };
+            }
+          })
+        );
+      }
+
       const photosWithLocation = photos.filter(photo => photo.location);
-      setUserPhotos(photos);
-      setScannedCount(photos.length);
+      setUserPhotos(prevPhotos => [...prevPhotos, ...photos]);
+      setScannedCount(prevCount => prevCount + photos.length);
       
       // Convert photos to PhotoData format for the report
       const photoData = photosWithLocation.map(photo => ({
@@ -94,39 +113,54 @@ export default function HomeScreen() {
         resolution: `${photo.width}x${photo.height}`,
         selected: false
       }));
-      setPhotoDataForReport(photoData);
+      
+      setPhotoDataForReport(prevData => [...prevData, ...photoData]);
       
       // Calculate potential value
       let totalValue = 0;
       photosWithLocation.forEach(photo => {
-        // Base value
         let value = 5;
         
-        // Add value based on resolution
         const resolution = photo.width * photo.height;
-        if (resolution > 12000000) { // 12MP
+        if (resolution > 12000000) {
           value += 3;
-        } else if (resolution > 8000000) { // 8MP
+        } else if (resolution > 8000000) {
           value += 2;
         }
         
-        // Add value based on recency
         const now = new Date();
         const hoursDiff = (now.getTime() - photo.creationTime.getTime()) / (1000 * 60 * 60);
         
         if (hoursDiff < 24) {
-          value += 2; // 24 hours or less
+          value += 2;
         } else if (hoursDiff < 72) {
-          value += 1; // 3 days or less
+          value += 1;
         }
         
         totalValue += value;
       });
       
-      setPotentialValue(totalValue);
+      setPotentialValue(prevValue => prevValue + totalValue);
       
     } catch (error) {
       console.error('Error loading photos:', error);
+    }
+  };
+
+  const handleUpload = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 1,
+        exif: true,
+      });
+
+      if (!result.canceled && result.assets) {
+        await loadUserPhotos(result.assets);
+      }
+    } catch (error) {
+      console.error('Error uploading photos:', error);
     }
   };
 
@@ -199,6 +233,7 @@ export default function HomeScreen() {
                   icon="upload"
                   buttonColor="#ffffff"
                   textColor="#6b4d8f"
+                  onPress={handleUpload}
                 >
                   Upload Photos
                 </Button>

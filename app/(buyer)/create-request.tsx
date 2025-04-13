@@ -296,56 +296,50 @@ export default function CreateRequest() {
 
   const loadUserPhotos = async () => {
     try {
-      console.log('Requesting photo library permissions...');
-      let permissionResult;
-      
-      if (Platform.OS === 'web') {
-        permissionResult = { status: 'granted' };
-      } else {
-        permissionResult = await MediaLibrary.requestPermissionsAsync();
-      }
-      
-      if (permissionResult.status !== 'granted') {
-        console.log('Photo library permission denied');
+      // Request both media library and camera permissions
+      const [mediaLibraryPermission, cameraPermission] = await Promise.all([
+        ImagePicker.requestMediaLibraryPermissionsAsync(),
+        ImagePicker.requestCameraPermissionsAsync()
+      ]);
+
+      if (mediaLibraryPermission.status !== 'granted') {
         Alert.alert(
           'Permission Required',
-          'Please grant photo library access to select photos.',
+          'Please grant access to your photo library to select photos.',
           [{ text: 'OK' }]
         );
         return;
       }
-      
-      // For web or if using image picker
+
+      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
         quality: 1,
         exif: true,
+        aspect: [4, 3],
       });
 
-      if (!result.canceled && result.assets) {
-        const newPhotos = await Promise.all(
-          result.assets.map(async (asset) => {
-            const photo: PhotoMetadata = {
-              id: asset.assetId || Date.now().toString(),
-              creationTime: new Date(),
-              filename: asset.uri,
-              width: asset.width || 800,
-              height: asset.height || 600,
-              uri: asset.uri,
-              location: {
-                latitude: 42.3601, // Default to Boston coordinates if no EXIF
-                longitude: -71.0549
-              }
-            };
-            return photo;
-          })
-        );
+      console.log('Image picker result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newPhotos = result.assets.map(asset => ({
+          id: asset.assetId || Date.now().toString(),
+          creationTime: new Date(),
+          filename: asset.uri,
+          width: asset.width || 800,
+          height: asset.height || 600,
+          uri: asset.uri,
+          location: {
+            latitude: 42.3601,
+            longitude: -71.0549
+          }
+        }));
 
         setUserPhotos(prevPhotos => [...prevPhotos, ...newPhotos]);
         
         // Also add to uploadedImages for preview
-        const newUploadedImages: UploadedImage[] = newPhotos.map(photo => ({
+        const newUploadedImages = newPhotos.map(photo => ({
           id: photo.id,
           uri: photo.uri,
           width: photo.width,
@@ -358,9 +352,13 @@ export default function CreateRequest() {
           ...prev,
           uploadedImages: [...prev.uploadedImages, ...newUploadedImages]
         }));
+
+        console.log('Added new photos:', newPhotos.length);
+      } else {
+        console.log('Image picker cancelled or no assets selected');
       }
     } catch (error) {
-      console.error('Error loading photos:', error);
+      console.error('Error in loadUserPhotos:', error);
       Alert.alert(
         'Error',
         'Failed to load photos. Please try again.',
@@ -775,13 +773,26 @@ export default function CreateRequest() {
         <TouchableOpacity 
           style={[styles.uploadButton, styles.uploadOptionButton]}
           onPress={async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            
+            if (status !== 'granted') {
+              Alert.alert(
+                'Permission Required',
+                'Please grant camera access to take photos.',
+                [{ text: 'OK' }]
+              );
+              return;
+            }
+
             const result = await ImagePicker.launchCameraAsync({
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
               quality: 1,
               exif: true,
+              allowsEditing: true,
+              aspect: [4, 3],
             });
 
-            if (!result.canceled && result.assets) {
+            if (!result.canceled && result.assets && result.assets.length > 0) {
               const newPhotos = result.assets.map(asset => ({
                 id: Date.now().toString(),
                 uri: asset.uri,
