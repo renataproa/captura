@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import PhotoPicker from '../components/PhotoPicker';
 
 // Categories from the buyer home screen
 const categories = ['Urban', 'Architecture', 'Campus', 'Nature', 'Events', 'Street Art'];
@@ -39,6 +40,25 @@ const rewardOptions = [
   { id: '6', label: '$30 Coupon', value: '30' },
 ];
 
+// Add time requirement options
+const timeRequirementOptions = [
+  { id: '1', label: 'No time restriction', value: 'none' },
+  { id: '2', label: 'Last 24 hours', value: '24' },
+  { id: '3', label: 'Last week', value: '168' },
+  { id: '4', label: 'Last month', value: '720' },
+  { id: '5', label: 'Custom time range', value: 'custom' },
+];
+
+const requestFilter = {
+  location: {
+    id: '1',
+    name: 'Boston Common',
+    coordinates: { latitude: 42.3554, longitude: -71.0655 }
+  },
+  createdAt: new Date().toISOString(),
+  expiration: '24' // hours
+};
+
 export default function CreateRequest() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
@@ -52,8 +72,13 @@ export default function CreateRequest() {
     hasMaxPhotos: false,
     maxPhotos: '5',
     reward: rewardOptions[0].value,
+    timeRequirement: timeRequirementOptions[0].value,
+    customTimeStart: new Date(),
+    customTimeEnd: new Date(),
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   const handleNext = () => {
     if (currentStep < 5) {
@@ -78,6 +103,10 @@ export default function CreateRequest() {
     // In a real app, this would send the data to a backend
     console.log('Form submitted:', formData);
     router.back();
+  };
+
+  const handlePhotosSelected = (photos: any[]) => {
+    // Handle photos selected
   };
 
   const renderStep = () => {
@@ -180,6 +209,74 @@ export default function CreateRequest() {
             <Text style={styles.stepTitle}>Time & Quantity</Text>
             <Text style={styles.stepSubtitle}>Step 3 of 5</Text>
             
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Time Requirement</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={formData.timeRequirement}
+                  onValueChange={(value: string) => setFormData({ ...formData, timeRequirement: value })}
+                  style={styles.picker}
+                >
+                  {timeRequirementOptions.map((option) => (
+                    <Picker.Item key={option.id} label={option.label} value={option.value} />
+                  ))}
+                </Picker>
+              </View>
+
+              {formData.timeRequirement === 'custom' && (
+                <View style={styles.customTimeContainer}>
+                  <TouchableOpacity
+                    style={styles.datePickerButton}
+                    onPress={() => setShowStartDatePicker(true)}
+                  >
+                    <Text style={styles.datePickerButtonText}>
+                      Start: {formData.customTimeStart.toLocaleDateString()}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.datePickerButton}
+                    onPress={() => setShowEndDatePicker(true)}
+                  >
+                    <Text style={styles.datePickerButtonText}>
+                      End: {formData.customTimeEnd.toLocaleDateString()}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {(showStartDatePicker || showEndDatePicker) && (
+                    <DateTimePicker
+                      value={showStartDatePicker ? formData.customTimeStart : formData.customTimeEnd}
+                      mode="date"
+                      display="default"
+                      onChange={(event, selectedDate) => {
+                        if (event.type === 'set' && selectedDate) {
+                          if (showStartDatePicker) {
+                            setFormData({ ...formData, customTimeStart: selectedDate });
+                            setShowStartDatePicker(false);
+                          } else {
+                            setFormData({ ...formData, customTimeEnd: selectedDate });
+                            setShowEndDatePicker(false);
+                          }
+                        } else {
+                          setShowStartDatePicker(false);
+                          setShowEndDatePicker(false);
+                        }
+                      }}
+                    />
+                  )}
+                </View>
+              )}
+
+              <Text style={styles.helperText}>
+                {formData.timeRequirement === 'none' 
+                  ? 'Photos can be from any time period'
+                  : formData.timeRequirement === 'custom'
+                  ? 'Photos must be taken between the selected dates'
+                  : `Photos must be taken within the ${timeRequirementOptions.find(opt => opt.value === formData.timeRequirement)?.label.toLowerCase()}`
+                }
+              </Text>
+            </View>
+
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Expiration Time</Text>
               <View style={styles.pickerContainer}>
@@ -356,6 +453,10 @@ export default function CreateRequest() {
       
       <ScrollView style={styles.content}>
         {renderStep()}
+        <PhotoPicker 
+          onPhotosSelected={handlePhotosSelected}
+          requestFilter={requestFilter}
+        />
       </ScrollView>
       
       <View style={styles.footer}>
@@ -640,5 +741,26 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     fontSize: 16,
     color: '#333',
+  },
+  customTimeContainer: {
+    marginTop: 12,
+  },
+  datePickerButton: {
+    backgroundColor: '#F0F0F0',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  helperText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 }); 
