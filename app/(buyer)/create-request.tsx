@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, FlatList } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, FlatList, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -12,6 +12,8 @@ import PhotoValueReport from '../components/PhotoValueReport';
 import { useTheme, SegmentedButtons, Chip, Searchbar } from 'react-native-paper';
 import { mockRequests, PhotoRequest } from './index';
 import * as Location from 'expo-location';
+import debounce from 'lodash/debounce';
+import * as ImagePicker from 'expo-image-picker';
 
 // Define PhotoData type to match PhotoValueReport
 interface PhotoData {
@@ -36,6 +38,8 @@ const categories = ['Urban', 'Architecture', 'Campus', 'Nature', 'Events', 'Stre
 interface Location {
   id: string;
   value: string;
+  subtitle?: string;
+  distance?: number;
   coordinates: {
     latitude: number;
     longitude: number;
@@ -152,12 +156,21 @@ function convertToPhotoData(photo: PhotoMetadata): PhotoData {
   };
 }
 
-// Add this interface for location search results
-interface LocationSearchResult {
+// Helper function to format distance
+const formatDistance = (distance: number): string => {
+  if (distance < 1) {
+    return `${Math.round(distance * 1000)} m`;
+  }
+  return `${distance.toFixed(1)} km`;
+};
+
+interface UploadedImage {
   id: string;
-  name: string;
-  address?: string;
-  coordinates: {
+  uri: string;
+  width: number;
+  height: number;
+  creationTime: Date;
+  location?: {
     latitude: number;
     longitude: number;
   };
@@ -166,11 +179,14 @@ interface LocationSearchResult {
 export default function CreateRequest() {
   const router = useRouter();
   const theme = useTheme();
+  
   const [currentStep, setCurrentStep] = useState(1);
   const [userPhotos, setUserPhotos] = useState<PhotoMetadata[]>([]);
   const [matchingSummary, setMatchingSummary] = useState<MatchingSummary | null>(null);
   const [showValueReport, setShowValueReport] = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState<PhotoData[]>([]);
+  const [searchResults, setSearchResults] = useState<Location[]>([]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   
   const [formData, setFormData] = useState({
     title: "Back Bay Urban Photography",
@@ -183,10 +199,85 @@ export default function CreateRequest() {
     maxPhotos: '5',
     budget: '200-300',
     deadline: '3',
-    urgency: 'normal'
+    urgency: 'normal',
+    uploadedImages: [] as UploadedImage[],
   });
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [searchResults, setSearchResults] = useState<Location[]>([]);
+
+  const formatDistance = (distance: number): string => {
+    if (distance < 1) {
+      return `${Math.round(distance * 1000)} m`;
+    }
+    return `${distance.toFixed(1)} km`;
+  };
+
+  const searchLocations = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Location permission denied');
+        return;
+      }
+
+      // Get current location
+      const currentLocation = await Location.getCurrentPositionAsync({});
+
+      // Search for locations using the query
+      const searchResults = await Location.geocodeAsync(query);
+      
+      if (searchResults.length > 0) {
+        // Convert the results to our format
+        const formattedResults = await Promise.all(
+          searchResults.map(async (result) => {
+            // Get the address for each location
+            const [address] = await Location.reverseGeocodeAsync({
+              latitude: result.latitude,
+              longitude: result.longitude,
+            });
+
+            // Calculate distance from current location
+            const distance = calculateDistance(
+              currentLocation.coords.latitude,
+              currentLocation.coords.longitude,
+              result.latitude,
+              result.longitude
+            );
+
+            // Format the main title and subtitle
+            const mainTitle = address?.name || '';
+            const subtitle = [address?.street, address?.city, address?.region]
+              .filter(Boolean)
+              .join(', ');
+
+            return {
+              id: `${result.latitude},${result.longitude}`,
+              value: mainTitle,
+              subtitle: subtitle,
+              distance: distance,
+              coordinates: {
+                latitude: result.latitude,
+                longitude: result.longitude,
+              }
+            };
+          })
+        );
+
+        setSearchResults(formattedResults);
+      }
+    } catch (error) {
+      console.error('Error searching locations:', error);
+      setSearchResults([]);
+    }
+  };
+
+  const debouncedSearch = useMemo(
+    () => debounce(searchLocations, 300),
+    [searchLocations]
+  );
 
   useEffect(() => {
     loadUserPhotos();
@@ -206,56 +297,75 @@ export default function CreateRequest() {
   const loadUserPhotos = async () => {
     try {
       console.log('Requesting photo library permissions...');
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      let permissionResult;
       
-      if (status !== 'granted') {
+      if (Platform.OS === 'web') {
+        permissionResult = { status: 'granted' };
+      } else {
+        permissionResult = await MediaLibrary.requestPermissionsAsync();
+      }
+      
+      if (permissionResult.status !== 'granted') {
         console.log('Photo library permission denied');
+        Alert.alert(
+          'Permission Required',
+          'Please grant photo library access to select photos.',
+          [{ text: 'OK' }]
+        );
         return;
       }
       
-      console.log('Loading photos from library...');
-      const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: 'photo',
-        first: 50, // Load last 50 photos
+      // For web or if using image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 1,
+        exif: true,
       });
-      
-      console.log(`Found ${assets.length} photos, processing metadata...`);
-      
-      // Convert assets to PhotoMetadata format
-      const photos: PhotoMetadata[] = await Promise.all(
-        assets.map(async (asset) => {
-          try {
-            const info = await MediaLibrary.getAssetInfoAsync(asset);
-            return {
-              id: asset.id,
-              creationTime: new Date(asset.creationTime),
-              filename: asset.filename,
-              location: info.location,
-              width: asset.width,
-              height: asset.height,
-              uri: info.localUri || asset.uri
+
+      if (!result.canceled && result.assets) {
+        const newPhotos = await Promise.all(
+          result.assets.map(async (asset) => {
+            const photo: PhotoMetadata = {
+              id: asset.assetId || Date.now().toString(),
+              creationTime: new Date(),
+              filename: asset.uri,
+              width: asset.width || 800,
+              height: asset.height || 600,
+              uri: asset.uri,
+              location: {
+                latitude: 42.3601, // Default to Boston coordinates if no EXIF
+                longitude: -71.0549
+              }
             };
-          } catch (error) {
-            console.error(`Error processing photo ${asset.id}:`, error);
-            return {
-              id: asset.id,
-              creationTime: new Date(asset.creationTime),
-              filename: asset.filename,
-              width: asset.width,
-              height: asset.height,
-              uri: asset.uri
-            };
-          }
-        })
-      );
-      
-      // Filter out photos without location data
-      const photosWithLocation = photos.filter(photo => photo.location);
-      console.log(`Processed ${photos.length} photos, ${photosWithLocation.length} have location data`);
-      
-      setUserPhotos(photos);
+            return photo;
+          })
+        );
+
+        setUserPhotos(prevPhotos => [...prevPhotos, ...newPhotos]);
+        
+        // Also add to uploadedImages for preview
+        const newUploadedImages: UploadedImage[] = newPhotos.map(photo => ({
+          id: photo.id,
+          uri: photo.uri,
+          width: photo.width,
+          height: photo.height,
+          creationTime: photo.creationTime,
+          location: photo.location
+        }));
+
+        setFormData(prev => ({
+          ...prev,
+          uploadedImages: [...prev.uploadedImages, ...newUploadedImages]
+        }));
+      }
     } catch (error) {
       console.error('Error loading photos:', error);
+      Alert.alert(
+        'Error',
+        'Failed to load photos. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -278,24 +388,22 @@ export default function CreateRequest() {
   };
 
   const handleSubmit = () => {
-    // Create a new request object
-    const selectedLocation = locations.find(loc => loc.id === formData.location);
-    const selectedExpiration = expirationOptions.find(opt => opt.value === formData.deadline);
-    
+    // Get the selected location from formData
     const newRequest: PhotoRequest = {
       id: (mockRequests.length + 1).toString(),
       title: formData.title,
       description: formData.description,
-      location: formData.location === 'custom' ? formData.customLocation : selectedLocation!.value,
+      location: formData.selectedLocation?.value || formData.locationSearch,
       category: formData.categories.join(', '),
       budget: formData.budget,
-      deadline: selectedExpiration!.deadline,
+      deadline: expirationOptions.find(opt => opt.value === formData.deadline)?.deadline || new Date().toISOString(),
       urgency: formData.urgency as 'normal' | 'urgent',
       responseCount: 0,
       matchedPhotos: 0,
-      coordinates: formData.location === 'custom' 
-        ? { latitude: 42.3601, longitude: -71.0549 } // Default to city center for custom locations
-        : selectedLocation!.coordinates
+      coordinates: formData.selectedLocation?.coordinates || {
+        latitude: 42.3601, // Default to Boston coordinates
+        longitude: -71.0549
+      }
     };
 
     // Add the new request to mockRequests
@@ -439,8 +547,8 @@ export default function CreateRequest() {
               <Searchbar
                 placeholder="Search for a location"
                 onChangeText={(text) => {
-                  setFormData({ ...formData, locationSearch: text });
-                  searchLocations(text);
+                  setFormData(prev => ({ ...prev, locationSearch: text }));
+                  debouncedSearch(text);
                 }}
                 value={formData.locationSearch}
                 style={styles.searchBar}
@@ -464,29 +572,32 @@ export default function CreateRequest() {
                           setSearchResults([]);
                         }}
                       >
-                        <Text style={styles.searchResultText}>{item.value}</Text>
+                        <View style={styles.searchResultContent}>
+                          <View style={styles.searchResultMain}>
+                            <Text style={styles.searchResultTitle}>{item.value}</Text>
+                            {item.subtitle && (
+                              <Text style={styles.searchResultSubtitle}>{item.subtitle}</Text>
+                            )}
+              </View>
+                          {item.distance !== undefined && (
+                            <Text style={styles.searchResultDistance}>
+                              {formatDistance(item.distance)}
+                            </Text>
+                          )}
+            </View>
                       </TouchableOpacity>
                     )}
                     style={styles.searchResultsList}
-                  />
-                </View>
-              )}
-              {renderLocationMatchingInfo()}
-            </View>
-            
-            {formData.location === '6' && (
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Custom Location</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter location details"
-                  value={formData.customLocation}
-                  onChangeText={(text) => setFormData({ ...formData, customLocation: text })}
                 />
               </View>
             )}
+            </View>
+
+            {formData.selectedLocation && renderLocationMatchingInfo()}
             
             <CategorySelector />
+            
+            {Platform.OS === 'web' && <ImageUploadSection />}
           </View>
         );
       
@@ -617,65 +728,15 @@ export default function CreateRequest() {
     }
   };
 
-  // Update the searchLocations function to use real location search
-  const searchLocations = async (query: string) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    try {
-      // Request location permissions if not already granted
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('Location permission denied');
-        return;
-      }
-
-      // Search for locations using the query
-      const searchResults = await Location.geocodeAsync(query);
-      
-      if (searchResults.length > 0) {
-        // Convert the results to our format
-        const formattedResults: Location[] = await Promise.all(
-          searchResults.map(async (result, index) => {
-            // Get the address for each location
-            const [address] = await Location.reverseGeocodeAsync({
-              latitude: result.latitude,
-              longitude: result.longitude,
-            });
-
-            const locationName = address 
-              ? `${address.name || ''} ${address.street || ''}`
-              : `Location ${index + 1}`;
-
-            return {
-              id: `${result.latitude},${result.longitude}`,
-              value: locationName.trim(),
-              coordinates: {
-                latitude: result.latitude,
-                longitude: result.longitude,
-              }
-            };
-          })
-        );
-
-        setSearchResults(formattedResults);
-      }
-    } catch (error) {
-      console.error('Error searching locations:', error);
-      setSearchResults([]);
-    }
-  };
-
   // Update the category selection UI
   const CategorySelector = () => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>Categories (Select multiple)</Text>
-      <View style={styles.categoriesGrid}>
+      <View style={styles.categoriesWrapper}>
         {categories.map((category) => (
           <Chip
             key={category}
+            mode="outlined"
             selected={formData.categories.includes(category)}
             onPress={() => {
               const updatedCategories = formData.categories.includes(category)
@@ -683,11 +744,9 @@ export default function CreateRequest() {
                 : [...formData.categories, category];
               setFormData({ ...formData, categories: updatedCategories });
             }}
-            style={[
-              styles.categoryChip,
-              formData.categories.includes(category) && styles.categoryChipSelected
-            ]}
-            showSelectedCheck
+            style={styles.categoryChipNew}
+            selectedColor="#007AFF"
+            showSelectedOverlay
           >
             {category}
           </Chip>
@@ -695,6 +754,87 @@ export default function CreateRequest() {
       </View>
       {formData.categories.length === 0 && (
         <Text style={styles.categoryWarning}>Please select at least one category</Text>
+      )}
+    </View>
+  );
+
+  const ImageUploadSection = () => (
+    <View style={styles.inputContainer}>
+      <Text style={styles.label}>Upload Images</Text>
+      <View style={styles.uploadOptionsContainer}>
+        <TouchableOpacity 
+          style={[styles.uploadButton, styles.uploadOptionButton]}
+          onPress={loadUserPhotos}
+        >
+          <Ionicons name="images-outline" size={24} color="#007AFF" />
+          <Text style={styles.uploadButtonText}>
+            Choose from Library
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.uploadButton, styles.uploadOptionButton]}
+          onPress={async () => {
+            const result = await ImagePicker.launchCameraAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              quality: 1,
+              exif: true,
+            });
+
+            if (!result.canceled && result.assets) {
+              const newPhotos = result.assets.map(asset => ({
+                id: Date.now().toString(),
+                uri: asset.uri,
+                width: asset.width || 800,
+                height: asset.height || 600,
+                creationTime: new Date(),
+                location: {
+                  latitude: 42.3601,
+                  longitude: -71.0549
+                }
+              }));
+
+              setFormData(prev => ({
+                ...prev,
+                uploadedImages: [...prev.uploadedImages, ...newPhotos]
+              }));
+            }
+          }}
+        >
+          <Ionicons name="camera-outline" size={24} color="#007AFF" />
+          <Text style={styles.uploadButtonText}>
+            Take Photo
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {formData.uploadedImages.length > 0 && (
+        <View style={styles.uploadedImagesContainer}>
+          <Text style={styles.uploadedImagesTitle}>
+            {formData.uploadedImages.length} image(s) selected
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {formData.uploadedImages.map((image, index) => (
+              <View key={image.id} style={styles.uploadedImageContainer}>
+                <Image 
+                  source={{ uri: image.uri }} 
+                  style={styles.uploadedImageThumbnail}
+                />
+                <TouchableOpacity 
+                  style={styles.removeImageButton}
+                  onPress={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      uploadedImages: prev.uploadedImages.filter((_, i) => i !== index)
+                    }));
+                  }}
+                >
+                  <Ionicons name="close-circle" size={20} color="#FF3B30" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
       )}
     </View>
   );
@@ -710,57 +850,59 @@ export default function CreateRequest() {
         />
       ) : (
         <>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color="#000" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Create Photo Request</Text>
-            <View style={styles.placeholder} />
-          </View>
-          
-          <View style={styles.progressContainer}>
-            {[1, 2, 3, 4, 5].map((step) => (
-              <View key={step} style={styles.progressStepContainer}>
-                <View 
-                  style={[
-                    styles.progressStep, 
-                    currentStep >= step ? styles.progressStepActive : {}
-                  ]} 
-                />
-                {step < 5 && (
-                  <View 
-                    style={[
-                      styles.progressLine, 
-                      currentStep > step ? styles.progressLineActive : {}
-                    ]} 
-                  />
-                )}
-              </View>
-            ))}
-          </View>
-          
-          <ScrollView style={styles.content}>
-            {renderStep()}
-          </ScrollView>
-          
-          <View style={styles.footer}>
-            {currentStep < 5 ? (
-              <TouchableOpacity 
-                style={styles.nextButton}
-                onPress={handleNext}
-              >
-                <Text style={styles.nextButtonText}>Next</Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFF" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity 
-                style={styles.submitButton}
-                onPress={handleSubmit}
-              >
-                <Text style={styles.submitButtonText}>Submit Request</Text>
-              </TouchableOpacity>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Create Photo Request</Text>
+        <View style={styles.placeholder} />
+      </View>
+      
+      <View style={styles.progressContainer}>
+        {[1, 2, 3, 4, 5].map((step) => (
+          <View key={step} style={styles.progressStepContainer}>
+            <View 
+              style={[
+                styles.progressStep, 
+                currentStep >= step ? styles.progressStepActive : {}
+              ]} 
+            />
+            {step < 5 && (
+              <View 
+                style={[
+                  styles.progressLine, 
+                  currentStep > step ? styles.progressLineActive : {}
+                ]} 
+              />
             )}
           </View>
+        ))}
+      </View>
+      
+          <View style={styles.mainContent}>
+      <ScrollView style={styles.content}>
+        {renderStep()}
+      </ScrollView>
+          </View>
+      
+      <View style={styles.footer}>
+        {currentStep < 5 ? (
+          <TouchableOpacity 
+            style={styles.nextButton}
+            onPress={handleNext}
+          >
+            <Text style={styles.nextButtonText}>Next</Text>
+            <Ionicons name="arrow-forward" size={20} color="#FFF" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity 
+            style={styles.submitButton}
+            onPress={handleSubmit}
+          >
+            <Text style={styles.submitButtonText}>Submit Request</Text>
+          </TouchableOpacity>
+        )}
+      </View>
         </>
       )}
     </SafeAreaView>
@@ -840,6 +982,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    zIndex: 1,
   },
   stepTitle: {
     fontSize: 20,
@@ -853,6 +996,8 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     marginBottom: 16,
+    position: 'relative',
+    zIndex: 2,
   },
   label: {
     fontSize: 16,
@@ -1082,51 +1227,129 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     marginBottom: 8,
-    backgroundColor: '#F8F8F8',
+    backgroundColor: '#FFF',
     elevation: 0,
     borderWidth: Platform.OS === 'ios' ? 1 : 0,
     borderColor: '#E0E0E0',
   },
   searchResultsContainer: {
-    maxHeight: 200,
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
     backgroundColor: '#FFF',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    marginBottom: 8,
+    marginTop: -4,
+    maxHeight: 200,
+    zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   searchResultsList: {
-    flex: 1,
+    backgroundColor: '#FFF',
   },
   searchResultItem: {
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
-  searchResultText: {
-    fontSize: 16,
+  searchResultContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  searchResultAddress: {
+  searchResultMain: {
+    flex: 1,
+    marginRight: 12,
+  },
+  searchResultTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  searchResultSubtitle: {
     fontSize: 14,
     color: '#666',
     marginTop: 2,
   },
-  categoriesGrid: {
+  searchResultDistance: {
+    fontSize: 14,
+    color: '#666',
+  },
+  categoriesWrapper: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -4,
+    gap: 8,
     marginTop: 8,
   },
-  categoryChip: {
-    margin: 4,
-    backgroundColor: '#F0F0F0',
-  },
-  categoryChipSelected: {
-    backgroundColor: '#007AFF',
+  categoryChipNew: {
+    marginBottom: 8,
+    backgroundColor: 'transparent',
   },
   categoryWarning: {
     color: '#FF3B30',
     fontSize: 12,
     marginTop: 4,
+  },
+  mainContent: {
+    flex: 1,
+    backgroundColor: '#F8F8F8',
+  },
+  uploadOptionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  uploadOptionButton: {
+    flex: 1,
+    minHeight: 100,
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    borderStyle: 'dashed',
+  },
+  uploadButtonText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  uploadedImagesContainer: {
+    marginTop: 16,
+  },
+  uploadedImagesTitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  uploadedImageContainer: {
+    position: 'relative',
+    marginRight: 8,
+  },
+  uploadedImageThumbnail: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FFF',
+    borderRadius: 10,
   },
 }); 
