@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -9,7 +9,9 @@ import * as MediaLibrary from 'expo-media-library';
 import { getMatchingSummary, PhotoMetadata, MatchingSummary } from '../utils/photoMatching';
 import { format } from 'date-fns';
 import PhotoValueReport from '../components/PhotoValueReport';
-import { useTheme, SegmentedButtons, Chip } from 'react-native-paper';
+import { useTheme, SegmentedButtons, Chip, Searchbar } from 'react-native-paper';
+import { mockRequests, PhotoRequest } from './index';
+import * as Location from 'expo-location';
 
 // Define PhotoData type to match PhotoValueReport
 interface PhotoData {
@@ -31,24 +33,64 @@ interface PhotoData {
 // Categories from the buyer home screen
 const categories = ['Urban', 'Architecture', 'Campus', 'Nature', 'Events', 'Street Art'];
 
-// Mock location data for Boston area
-const locations = [
-  { id: '1', name: 'Boston Common' },
-  { id: '2', name: 'Faneuil Hall' },
-  { id: '3', name: 'Harvard Campus' },
-  { id: '4', name: 'Fenway Park' },
-  { id: '5', name: 'Boston Harbor' },
-  { id: '6', name: 'Custom Location' },
+interface Location {
+  id: string;
+  value: string;
+  coordinates: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface ExpirationOption {
+  id: string;
+  label: string;
+  value: string;
+  deadline: string;
+}
+
+const locations: Location[] = [
+  {
+    id: "1",
+    value: "Boston Common",
+    coordinates: { latitude: 42.3551, longitude: -71.0657 }
+  },
+  {
+    id: "2",
+    value: "Faneuil Hall",
+    coordinates: { latitude: 42.3600, longitude: -71.0568 }
+  },
+  {
+    id: "3",
+    value: "Harvard Square",
+    coordinates: { latitude: 42.3736, longitude: -71.1190 }
+  },
+  {
+    id: "4",
+    value: "Custom Location",
+    coordinates: { latitude: 42.3601, longitude: -71.0549 }
+  }
 ];
 
-// Expiration time options
-const expirationOptions = [
-  { id: '1', label: '3 hours', value: '3' },
-  { id: '2', label: '6 hours', value: '6' },
-  { id: '3', label: '12 hours', value: '12' },
-  { id: '4', label: '24 hours', value: '24' },
-  { id: '5', label: '3 days', value: '72' },
-  { id: '6', label: '1 week', value: '168' },
+const expirationOptions: ExpirationOption[] = [
+  {
+    id: "1",
+    label: "1 day",
+    value: "1",
+    deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: "2",
+    label: "3 days",
+    value: "3",
+    deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: "3",
+    label: "1 week",
+    value: "7",
+    deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  }
 ];
 
 // Reward options (non-monetary in v0.1)
@@ -110,6 +152,17 @@ function convertToPhotoData(photo: PhotoMetadata): PhotoData {
   };
 }
 
+// Add this interface for location search results
+interface LocationSearchResult {
+  id: string;
+  name: string;
+  address?: string;
+  coordinates: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
 export default function CreateRequest() {
   const router = useRouter();
   const theme = useTheme();
@@ -122,15 +175,18 @@ export default function CreateRequest() {
   const [formData, setFormData] = useState({
     title: "Back Bay Urban Photography",
     description: "Looking for high-quality urban photos of Back Bay area, similar to recent shots. Particularly interested in architectural details and street scenes.",
-    location: '6',
+    location: '',
     customLocation: '',
-    category: 'Urban',
+    locationSearch: '',
+    selectedLocation: null as Location | null,
+    categories: ['Urban'] as string[],
     maxPhotos: '5',
     budget: '200-300',
     deadline: '3',
     urgency: 'normal'
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [searchResults, setSearchResults] = useState<Location[]>([]);
 
   useEffect(() => {
     loadUserPhotos();
@@ -139,13 +195,13 @@ export default function CreateRequest() {
   useEffect(() => {
     if (userPhotos.length > 0) {
       const summary = getMatchingSummary(userPhotos, {
-        location: locations.find(loc => loc.id === formData.location)?.name || '',
+        location: locations.find(loc => loc.id === formData.location)?.value || '',
         customLocation: formData.customLocation,
-        category: formData.category,
+        category: formData.categories.join(', '),
       });
       setMatchingSummary(summary);
     }
-  }, [formData.location, formData.customLocation, formData.category]);
+  }, [formData.location, formData.customLocation, formData.categories]);
 
   const loadUserPhotos = async () => {
     try {
@@ -209,8 +265,7 @@ export default function CreateRequest() {
     } else {
       // Submit form
       console.log('Form submitted:', formData);
-      // Navigate back to home screen
-      router.back();
+      handleSubmit();
     }
   };
 
@@ -223,9 +278,31 @@ export default function CreateRequest() {
   };
 
   const handleSubmit = () => {
-    // Handle form submission
-    console.log('Form submitted:', formData);
-    router.back();
+    // Create a new request object
+    const selectedLocation = locations.find(loc => loc.id === formData.location);
+    const selectedExpiration = expirationOptions.find(opt => opt.value === formData.deadline);
+    
+    const newRequest: PhotoRequest = {
+      id: (mockRequests.length + 1).toString(),
+      title: formData.title,
+      description: formData.description,
+      location: formData.location === 'custom' ? formData.customLocation : selectedLocation!.value,
+      category: formData.categories.join(', '),
+      budget: formData.budget,
+      deadline: selectedExpiration!.deadline,
+      urgency: formData.urgency as 'normal' | 'urgent',
+      responseCount: 0,
+      matchedPhotos: 0,
+      coordinates: formData.location === 'custom' 
+        ? { latitude: 42.3601, longitude: -71.0549 } // Default to city center for custom locations
+        : selectedLocation!.coordinates
+    };
+
+    // Add the new request to mockRequests
+    mockRequests.unshift(newRequest);
+
+    // Navigate back to the marketplace
+    router.push('/(buyer)');
   };
 
   const renderLocationMatchingInfo = () => {
@@ -359,17 +436,41 @@ export default function CreateRequest() {
             
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Location</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={formData.location}
-                  onValueChange={(value: string) => setFormData({ ...formData, location: value })}
-                  style={styles.picker}
-                >
-                  {locations.map((location) => (
-                    <Picker.Item key={location.id} label={location.name} value={location.id} />
-                  ))}
-                </Picker>
-              </View>
+              <Searchbar
+                placeholder="Search for a location"
+                onChangeText={(text) => {
+                  setFormData({ ...formData, locationSearch: text });
+                  searchLocations(text);
+                }}
+                value={formData.locationSearch}
+                style={styles.searchBar}
+              />
+              
+              {searchResults.length > 0 && (
+                <View style={styles.searchResultsContainer}>
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.searchResultItem}
+                        onPress={() => {
+                          setFormData({
+                            ...formData,
+                            location: item.id,
+                            locationSearch: item.value,
+                            selectedLocation: item
+                          });
+                          setSearchResults([]);
+                        }}
+                      >
+                        <Text style={styles.searchResultText}>{item.value}</Text>
+                      </TouchableOpacity>
+                    )}
+                    style={styles.searchResultsList}
+                  />
+                </View>
+              )}
               {renderLocationMatchingInfo()}
             </View>
             
@@ -385,26 +486,7 @@ export default function CreateRequest() {
               </View>
             )}
             
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Category</Text>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                style={styles.categoryContainer}
-              >
-                {categories.map((category) => (
-                  <Chip
-                    key={category}
-                    selected={formData.category === category}
-                    onPress={() => setFormData({ ...formData, category })}
-                    style={styles.categoryChip}
-                    showSelectedOverlay
-                  >
-                    {category}
-                  </Chip>
-                ))}
-              </ScrollView>
-            </View>
+            <CategorySelector />
           </View>
         );
       
@@ -496,13 +578,13 @@ export default function CreateRequest() {
                 <Text style={styles.reviewValue}>
                   {formData.location === '6' 
                     ? formData.customLocation 
-                    : locations.find(loc => loc.id === formData.location)?.name}
+                    : locations.find(loc => loc.id === formData.location)?.value}
                 </Text>
               </View>
               
               <View style={styles.reviewItem}>
                 <Text style={styles.reviewLabel}>Category:</Text>
-                <Text style={styles.reviewValue}>{formData.category}</Text>
+                <Text style={styles.reviewValue}>{formData.categories.join(', ')}</Text>
               </View>
               
               <View style={styles.reviewItem}>
@@ -535,13 +617,95 @@ export default function CreateRequest() {
     }
   };
 
+  // Update the searchLocations function to use real location search
+  const searchLocations = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      // Request location permissions if not already granted
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Location permission denied');
+        return;
+      }
+
+      // Search for locations using the query
+      const searchResults = await Location.geocodeAsync(query);
+      
+      if (searchResults.length > 0) {
+        // Convert the results to our format
+        const formattedResults: Location[] = await Promise.all(
+          searchResults.map(async (result, index) => {
+            // Get the address for each location
+            const [address] = await Location.reverseGeocodeAsync({
+              latitude: result.latitude,
+              longitude: result.longitude,
+            });
+
+            const locationName = address 
+              ? `${address.name || ''} ${address.street || ''}`
+              : `Location ${index + 1}`;
+
+            return {
+              id: `${result.latitude},${result.longitude}`,
+              value: locationName.trim(),
+              coordinates: {
+                latitude: result.latitude,
+                longitude: result.longitude,
+              }
+            };
+          })
+        );
+
+        setSearchResults(formattedResults);
+      }
+    } catch (error) {
+      console.error('Error searching locations:', error);
+      setSearchResults([]);
+    }
+  };
+
+  // Update the category selection UI
+  const CategorySelector = () => (
+    <View style={styles.inputContainer}>
+      <Text style={styles.label}>Categories (Select multiple)</Text>
+      <View style={styles.categoriesGrid}>
+        {categories.map((category) => (
+          <Chip
+            key={category}
+            selected={formData.categories.includes(category)}
+            onPress={() => {
+              const updatedCategories = formData.categories.includes(category)
+                ? formData.categories.filter(c => c !== category)
+                : [...formData.categories, category];
+              setFormData({ ...formData, categories: updatedCategories });
+            }}
+            style={[
+              styles.categoryChip,
+              formData.categories.includes(category) && styles.categoryChipSelected
+            ]}
+            showSelectedCheck
+          >
+            {category}
+          </Chip>
+        ))}
+      </View>
+      {formData.categories.length === 0 && (
+        <Text style={styles.categoryWarning}>Please select at least one category</Text>
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {showValueReport ? (
         <PhotoValueReport 
           photos={selectedPhotos}
-          requestLocation={locations.find(loc => loc.id === formData.location)?.name || 'Custom Location'}
-          requestCategory={formData.category}
+          requestLocation={locations.find(loc => loc.id === formData.location)?.value || 'Custom Location'}
+          requestCategory={formData.categories.join(', ')}
           onClose={() => setShowValueReport(false)}
         />
       ) : (
@@ -915,5 +1079,54 @@ const styles = StyleSheet.create({
   },
   urgencyButtons: {
     marginBottom: 16,
+  },
+  searchBar: {
+    marginBottom: 8,
+    backgroundColor: '#F8F8F8',
+    elevation: 0,
+    borderWidth: Platform.OS === 'ios' ? 1 : 0,
+    borderColor: '#E0E0E0',
+  },
+  searchResultsContainer: {
+    maxHeight: 200,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 8,
+  },
+  searchResultsList: {
+    flex: 1,
+  },
+  searchResultItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  searchResultText: {
+    fontSize: 16,
+  },
+  searchResultAddress: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  categoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+    marginTop: 8,
+  },
+  categoryChip: {
+    margin: 4,
+    backgroundColor: '#F0F0F0',
+  },
+  categoryChipSelected: {
+    backgroundColor: '#007AFF',
+  },
+  categoryWarning: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginTop: 4,
   },
 }); 
