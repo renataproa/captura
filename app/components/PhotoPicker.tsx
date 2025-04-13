@@ -5,48 +5,21 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { format } from 'date-fns';
-import { matchPhotoToRequest, getMatchingPhotos } from '../utils/photoMatching';
-import * as ImagePicker from 'expo-image-picker';
 
 interface PhotoMetadata {
   id: string;
   uri: string;
-  creationTime: string;
-  location?: {
-    latitude: number;
-    longitude: number;
-  };
+  location?: MediaLibrary.Location;
+  creationTime?: number;
   selected: boolean;
   filename?: string;
   width?: number;
   height?: number;
 }
 
-interface ProcessedPhoto {
-  id: string;
-  uri: string;
-  metadata: PhotoMetadata;
-}
-
 type PhotoLoadResult = PhotoMetadata | null;
 
-interface PhotoPickerProps {
-  onPhotosSelected: (photos: any[]) => void;
-  requestFilter?: {
-    location: {
-      id: string;
-      name: string;
-      coordinates?: {
-        latitude: number;
-        longitude: number;
-      };
-    };
-    createdAt: string;
-    expiration: string;
-  };
-}
-
-export default function PhotoPicker({ onPhotosSelected, requestFilter }: PhotoPickerProps) {
+export default function PhotoPicker() {
   const [permission, setPermission] = useState<MediaLibrary.PermissionResponse | null>(null);
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
   const [visible, setVisible] = useState(false);
@@ -55,7 +28,6 @@ export default function PhotoPicker({ onPhotosSelected, requestFilter }: PhotoPi
   const [error, setError] = useState<string | null>(null);
   const [showDevBuildBanner, setShowDevBuildBanner] = useState(Platform.OS === 'android');
   const [selectAll, setSelectAll] = useState(false);
-  const [unmatchedReasons, setUnmatchedReasons] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     requestPermissions();
@@ -107,11 +79,8 @@ export default function PhotoPicker({ onPhotosSelected, requestFilter }: PhotoPi
             const photoData: PhotoMetadata = {
               id: asset.id,
               uri: localUri,
-              creationTime: new Date(info.creationTime).toISOString(),
-              location: info.location ? {
-                latitude: info.location.latitude,
-                longitude: info.location.longitude
-              } : undefined,
+              location: info.location,
+              creationTime: info.creationTime,
               selected: false,
               filename: info.filename,
               width: asset.width,
@@ -181,81 +150,6 @@ export default function PhotoPicker({ onPhotosSelected, requestFilter }: PhotoPi
     
     console.log('Processed photos:', processedPhotos);
     setVisible(false);
-  };
-
-  const processPhotos = async (result: ImagePicker.ImagePickerResult) => {
-    if (result.canceled) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const processedPhotos = await Promise.all(
-        result.assets.map(async (photo: ImagePicker.ImagePickerAsset) => {
-          try {
-            // For ImagePicker assets, we need to use the URI to get the asset info
-            const assets = await MediaLibrary.getAssetsAsync({
-              first: 1,
-              sortBy: MediaLibrary.SortBy.creationTime,
-              mediaType: MediaLibrary.MediaType.photo,
-            });
-            
-            const matchingAsset = assets.assets.find(asset => asset.uri === photo.uri);
-            if (!matchingAsset) {
-              console.error('Could not find matching asset for selected photo');
-              return null;
-            }
-
-            const info = await MediaLibrary.getAssetInfoAsync(matchingAsset.id);
-            const metadata: PhotoMetadata = {
-              id: info.id,
-              uri: info.localUri || info.uri,
-              creationTime: new Date(info.creationTime).toISOString(),
-              location: info.location ? {
-                latitude: info.location.latitude,
-                longitude: info.location.longitude
-              } : undefined,
-              selected: false,
-              filename: info.filename,
-              width: info.width,
-              height: info.height,
-            };
-
-            // If there's a request filter, check if the photo matches
-            if (requestFilter) {
-              const { isMatch, reason } = matchPhotoToRequest(metadata, requestFilter);
-              if (!isMatch && reason) {
-                setUnmatchedReasons(prev => new Map(prev.set(info.id, reason)));
-                return null;
-              }
-            }
-
-            const processedPhoto: ProcessedPhoto = {
-              id: info.id,
-              uri: info.localUri || info.uri,
-              metadata,
-            };
-
-            return processedPhoto;
-          } catch (err) {
-            console.error('Error processing photo:', err);
-            return null;
-          }
-        })
-      );
-
-      const validPhotos = processedPhotos.filter((photo: ProcessedPhoto | null): photo is ProcessedPhoto => photo !== null);
-      setSelectedPhotos(validPhotos.map(photo => photo.metadata));
-      onPhotosSelected(validPhotos);
-
-    } catch (err) {
-      setError('Failed to process photos. Please try again.');
-      console.error('Error in processPhotos:', err);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const renderPhoto = ({ item }: { item: PhotoMetadata }) => (
@@ -355,15 +249,6 @@ export default function PhotoPicker({ onPhotosSelected, requestFilter }: PhotoPi
                 numColumns={3}
                 contentContainerStyle={styles.photoGrid}
               />
-            )}
-
-            {unmatchedReasons.size > 0 && (
-              <View style={styles.warningContainer}>
-                <Text style={styles.warningTitle}>Some photos didn't match the request criteria:</Text>
-                {Array.from(unmatchedReasons.entries()).map(([id, reason]) => (
-                  <Text key={id} style={styles.warningText}>• {reason}</Text>
-                ))}
-              </View>
             )}
 
             <View style={styles.modalFooter}>
@@ -473,24 +358,5 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     marginLeft: 8,
-  },
-  warningContainer: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FFB74D',
-  },
-  warningTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#F57C00',
-    marginBottom: 8,
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#F57C00',
-    marginBottom: 4,
   },
 }); 
