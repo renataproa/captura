@@ -9,16 +9,15 @@ import { format } from 'date-fns';
 interface PhotoMetadata {
   id: string;
   uri: string;
-  location?: {
-    latitude: number;
-    longitude: number;
-  };
+  location?: MediaLibrary.Location;
   creationTime?: number;
-  selected?: boolean;
+  selected: boolean;
   filename?: string;
   width?: number;
   height?: number;
 }
+
+type PhotoLoadResult = PhotoMetadata | null;
 
 export default function PhotoPicker() {
   const [permission, setPermission] = useState<MediaLibrary.PermissionResponse | null>(null);
@@ -28,6 +27,7 @@ export default function PhotoPicker() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDevBuildBanner, setShowDevBuildBanner] = useState(Platform.OS === 'android');
+  const [selectAll, setSelectAll] = useState(false);
 
   useEffect(() => {
     requestPermissions();
@@ -51,46 +51,6 @@ export default function PhotoPicker() {
     }
   };
 
-  const extractMetadata = async (asset: MediaLibrary.Asset): Promise<PhotoMetadata> => {
-    try {
-      const info = await MediaLibrary.getAssetInfoAsync(asset);
-      let location = info.location;
-
-      // If no location in metadata, try to get the current location
-      if (!location && permission?.granted) {
-        try {
-          const currentLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High
-          });
-          location = {
-            latitude: currentLocation.coords.latitude,
-            longitude: currentLocation.coords.longitude
-          };
-        } catch (err) {
-          console.log('Could not get current location:', err);
-        }
-      }
-
-      return {
-        id: asset.id,
-        uri: asset.uri,
-        location,
-        creationTime: info.creationTime,
-        selected: false,
-        filename: info.filename,
-        width: asset.width,
-        height: asset.height
-      };
-    } catch (err) {
-      console.error('Error extracting metadata:', err);
-      return {
-        id: asset.id,
-        uri: asset.uri,
-        selected: false
-      };
-    }
-  };
-
   const loadPhotos = async () => {
     if (!permission?.granted) {
       return;
@@ -107,10 +67,48 @@ export default function PhotoPicker() {
       });
 
       const photosWithMetadata = await Promise.all(
-        assets.map(asset => extractMetadata(asset))
+        assets.map(async (asset) => {
+          try {
+            // Get the asset info first
+            const info = await MediaLibrary.getAssetInfoAsync(asset);
+            
+            // Use the localUri from asset info
+            const localUri = info.localUri || asset.uri;
+
+            // Create photo metadata without processing
+            const photoData: PhotoMetadata = {
+              id: asset.id,
+              uri: localUri,
+              location: info.location,
+              creationTime: info.creationTime,
+              selected: false,
+              filename: info.filename,
+              width: asset.width,
+              height: asset.height
+            };
+
+            return photoData;
+          } catch (err) {
+            console.error('Error loading photo:', err);
+            return null;
+          }
+        })
       );
 
-      setPhotos(photosWithMetadata);
+      // Filter out any failed loads and ensure type safety
+      const validPhotos = photosWithMetadata.filter((photo): photo is PhotoMetadata => 
+        photo !== null && 
+        typeof photo === 'object' &&
+        'id' in photo &&
+        'uri' in photo &&
+        'selected' in photo
+      );
+      
+      if (validPhotos.length === 0) {
+        setError('No photos could be loaded');
+      } else {
+        setPhotos(validPhotos);
+      }
     } catch (err) {
       setError('Error loading photos');
       console.error('Load photos error:', err);
@@ -125,6 +123,17 @@ export default function PhotoPicker() {
     );
     setPhotos(updatedPhotos);
     setSelectedPhotos(updatedPhotos.filter(p => p.selected));
+  };
+
+  const toggleSelectAll = () => {
+    const newSelectAll = !selectAll;
+    setSelectAll(newSelectAll);
+    const updatedPhotos = photos.map(photo => ({
+      ...photo,
+      selected: newSelectAll
+    }));
+    setPhotos(updatedPhotos);
+    setSelectedPhotos(newSelectAll ? updatedPhotos : []);
   };
 
   const handlePhotoSelect = () => {
@@ -148,7 +157,21 @@ export default function PhotoPicker() {
       style={[styles.photoItem, item.selected && styles.selectedPhoto]}
       onPress={() => togglePhotoSelection(item)}
     >
-      <Image source={{ uri: item.uri }} style={styles.thumbnail} />
+      <Image 
+        source={{ uri: item.uri }} 
+        style={styles.thumbnail}
+        resizeMode="cover"
+        onError={(error) => {
+          console.error('Image loading error:', error.nativeEvent.error);
+          // Update the photo's URI to use the asset URI as fallback
+          if (item.uri.startsWith('ph://')) {
+            const updatedPhotos = photos.map((p) => 
+              p.id === item.id ? { ...p, uri: `asset://${item.uri.slice(5)}` } : p
+            );
+            setPhotos(updatedPhotos);
+          }
+        }}
+      />
       {item.selected && (
         <View style={styles.checkmark}>
           <Text style={styles.checkmarkText}>✓</Text>
@@ -199,50 +222,54 @@ export default function PhotoPicker() {
                 For full media library access on Android, please use a development build.
               </Banner>
             )}
-            
-            <Text variant="titleLarge" style={styles.modalTitle}>
-              Select Photos
-            </Text>
-            
+
+            <View style={styles.modalHeader}>
+              <Text variant="headlineMedium" style={styles.modalTitle}>Select Photos</Text>
+              <Button
+                mode="text"
+                onPress={toggleSelectAll}
+                textColor="#6b4d8f"
+              >
+                {selectAll ? 'Deselect All' : 'Select All'}
+              </Button>
+            </View>
+
             {error ? (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Button onPress={requestPermissions}>Retry</Button>
-              </View>
-            ) : permission?.granted ? (
-              <>
-                <FlatList
-                  data={photos}
-                  renderItem={renderPhoto}
-                  keyExtractor={(item) => item.id}
-                  numColumns={3}
-                  style={styles.photoGrid}
-                  onEndReachedThreshold={0.5}
-                />
-                <View style={styles.modalActions}>
-                  <Button
-                    mode="outlined"
-                    onPress={() => setVisible(false)}
-                    style={styles.actionButton}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    mode="contained"
-                    onPress={handlePhotoSelect}
-                    style={styles.actionButton}
-                    disabled={selectedPhotos.length === 0}
-                  >
-                    Select ({selectedPhotos.length})
-                  </Button>
-                </View>
-              </>
+              <Banner
+                visible={true}
+                icon="alert"
+              >
+                {error}
+              </Banner>
             ) : (
-              <View style={styles.permissionContainer}>
-                <Text>Please grant photo library access to continue</Text>
-                <Button onPress={requestPermissions}>Grant Access</Button>
-              </View>
+              <FlatList
+                data={photos}
+                renderItem={renderPhoto}
+                keyExtractor={(item) => item.id}
+                numColumns={3}
+                contentContainerStyle={styles.photoGrid}
+              />
             )}
+
+            <View style={styles.modalFooter}>
+              <Button
+                mode="outlined"
+                onPress={() => setVisible(false)}
+                style={styles.footerButton}
+                textColor="#6b4d8f"
+              >
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handlePhotoSelect}
+                style={[styles.footerButton, styles.selectButton]}
+                disabled={selectedPhotos.length === 0}
+                buttonColor="#6b4d8f"
+              >
+                Select ({selectedPhotos.length})
+              </Button>
+            </View>
           </View>
         </Modal>
       </Portal>
@@ -266,80 +293,70 @@ const styles = StyleSheet.create({
   modalContent: {
     flex: 1,
   },
-  modalTitle: {
-    padding: 16,
-    textAlign: 'center',
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#E0E0E0',
+  },
+  modalTitle: {
+    color: '#6b4d8f',
+    fontWeight: '500',
   },
   photoGrid: {
-    flex: 1,
     padding: 4,
   },
   photoItem: {
-    flex: 1/3,
+    flex: 1,
+    margin: 4,
     aspectRatio: 1,
-    padding: 4,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#F0F0F0',
   },
   thumbnail: {
-    flex: 1,
-    borderRadius: 8,
+    width: '100%',
+    height: '100%',
   },
   selectedPhoto: {
-    opacity: 0.7,
+    borderWidth: 2,
+    borderColor: '#6b4d8f',
   },
   checkmark: {
     position: 'absolute',
-    right: 12,
-    top: 12,
-    backgroundColor: '#6b4d8f',
-    borderRadius: 12,
+    top: 8,
+    right: 8,
     width: 24,
     height: 24,
-    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#6b4d8f',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   checkmarkText: {
-    color: 'white',
+    color: '#ffffff',
     fontSize: 16,
+    fontWeight: 'bold',
   },
   locationIndicator: {
     position: 'absolute',
-    left: 12,
-    top: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    bottom: 8,
+    left: 8,
   },
   locationIndicatorText: {
     fontSize: 16,
   },
-  modalActions: {
+  modalFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-    gap: 8,
+    borderTopColor: '#E0E0E0',
   },
-  actionButton: {
-    minWidth: 100,
-  },
-  permissionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#dc2626',
-    marginBottom: 12,
+  footerButton: {
+    marginLeft: 8,
   },
 }); 
