@@ -11,32 +11,32 @@ const categories = ['Urban', 'Architecture', 'Campus', 'Nature', 'Events', 'Stre
 
 // Mock location data for Boston area
 const locations = [
-  { id: 1, name: 'Boston Common' },
-  { id: 2, name: 'Faneuil Hall' },
-  { id: 3, name: 'Harvard Campus' },
-  { id: 4, name: 'Fenway Park' },
-  { id: 5, name: 'Boston Harbor' },
-  { id: 6, name: 'Custom Location' },
+  { id: '1', name: 'Boston Common' },
+  { id: '2', name: 'Faneuil Hall' },
+  { id: '3', name: 'Harvard Campus' },
+  { id: '4', name: 'Fenway Park' },
+  { id: '5', name: 'Boston Harbor' },
+  { id: '6', name: 'Custom Location' },
 ];
 
 // Expiration time options
 const expirationOptions = [
-  { id: 1, label: '3 hours', value: 3 },
-  { id: 2, label: '6 hours', value: 6 },
-  { id: 3, label: '12 hours', value: 12 },
-  { id: 4, label: '24 hours', value: 24 },
-  { id: 5, label: '3 days', value: 72 },
-  { id: 6, label: '1 week', value: 168 },
+  { id: '1', label: '3 hours', value: '3' },
+  { id: '2', label: '6 hours', value: '6' },
+  { id: '3', label: '12 hours', value: '12' },
+  { id: '4', label: '24 hours', value: '24' },
+  { id: '5', label: '3 days', value: '72' },
+  { id: '6', label: '1 week', value: '168' },
 ];
 
 // Reward options (non-monetary in v0.1)
 const rewardOptions = [
-  { id: 1, label: '$5 Coupon', value: 5 },
-  { id: 2, label: '$10 Coupon', value: 10 },
-  { id: 3, label: '$15 Coupon', value: 15 },
-  { id: 4, label: '$20 Coupon', value: 20 },
-  { id: 5, label: '$25 Coupon', value: 25 },
-  { id: 6, label: '$30 Coupon', value: 30 },
+  { id: '1', label: '$5 Coupon', value: '5' },
+  { id: '2', label: '$10 Coupon', value: '10' },
+  { id: '3', label: '$15 Coupon', value: '15' },
+  { id: '4', label: '$20 Coupon', value: '20' },
+  { id: '5', label: '$25 Coupon', value: '25' },
+  { id: '6', label: '$30 Coupon', value: '30' },
 ];
 
 export default function CreateRequest() {
@@ -49,7 +49,8 @@ export default function CreateRequest() {
     location: locations[0].id,
     customLocation: '',
     expiration: expirationOptions[0].value,
-    maxPhotos: 5,
+    hasMaxPhotos: false,
+    maxPhotos: '5',
     reward: rewardOptions[0].value,
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -119,17 +120,29 @@ export default function CreateRequest() {
             
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Category</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={formData.category}
-                  onValueChange={(value: string) => setFormData({ ...formData, category: value })}
-                  style={styles.picker}
-                >
-                  {categories.map((category) => (
-                    <Picker.Item key={category} label={category} value={category} />
-                  ))}
-                </Picker>
-              </View>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryContainer}
+              >
+                {categories.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[
+                      styles.categoryChip,
+                      formData.category === category && styles.categoryChipSelected
+                    ]}
+                    onPress={() => setFormData({ ...formData, category })}
+                  >
+                    <Text style={[
+                      styles.categoryChipText,
+                      formData.category === category && styles.categoryChipTextSelected
+                    ]}>
+                      {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
             
             <View style={styles.inputContainer}>
@@ -137,7 +150,7 @@ export default function CreateRequest() {
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={formData.location}
-                  onValueChange={(value: number) => setFormData({ ...formData, location: value })}
+                  onValueChange={(value: string) => setFormData({ ...formData, location: value })}
                   style={styles.picker}
                 >
                   {locations.map((location) => (
@@ -147,7 +160,7 @@ export default function CreateRequest() {
               </View>
             </View>
             
-            {formData.location === 6 && (
+            {formData.location === '6' && (
               <View style={styles.inputContainer}>
                 <Text style={styles.label}>Custom Location</Text>
                 <TextInput
@@ -172,7 +185,7 @@ export default function CreateRequest() {
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={formData.expiration}
-                  onValueChange={(value: number) => setFormData({ ...formData, expiration: value })}
+                  onValueChange={(value: string) => setFormData({ ...formData, expiration: value })}
                   style={styles.picker}
                 >
                   {expirationOptions.map((option) => (
@@ -183,26 +196,41 @@ export default function CreateRequest() {
             </View>
             
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Maximum Photos Needed</Text>
-              <View style={styles.numberInputContainer}>
-                <TouchableOpacity 
-                  style={styles.numberButton}
-                  onPress={() => {
-                    if (formData.maxPhotos > 1) {
-                      setFormData({ ...formData, maxPhotos: formData.maxPhotos - 1 });
-                    }
-                  }}
-                >
-                  <Ionicons name="remove" size={24} color="#007AFF" />
-                </TouchableOpacity>
-                <Text style={styles.numberInput}>{formData.maxPhotos}</Text>
-                <TouchableOpacity 
-                  style={styles.numberButton}
-                  onPress={() => setFormData({ ...formData, maxPhotos: formData.maxPhotos + 1 })}
-                >
-                  <Ionicons name="add" size={24} color="#007AFF" />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity 
+                style={styles.toggleContainer}
+                onPress={() => setFormData({ ...formData, hasMaxPhotos: !formData.hasMaxPhotos })}
+              >
+                <View style={[styles.toggle, formData.hasMaxPhotos && styles.toggleActive]}>
+                  <View style={[styles.toggleHandle, formData.hasMaxPhotos && styles.toggleHandleActive]} />
+                </View>
+                <Text style={styles.toggleLabel}>Set maximum number of photos</Text>
+              </TouchableOpacity>
+
+              {formData.hasMaxPhotos && (
+                <View style={[styles.numberInputContainer, { marginTop: 12 }]}>
+                  <TouchableOpacity 
+                    style={styles.numberButton}
+                    onPress={() => {
+                      const currentValue = parseInt(formData.maxPhotos);
+                      if (currentValue > 1) {
+                        setFormData({ ...formData, maxPhotos: String(currentValue - 1) });
+                      }
+                    }}
+                  >
+                    <Ionicons name="remove" size={24} color="#007AFF" />
+                  </TouchableOpacity>
+                  <Text style={styles.numberInput}>{formData.maxPhotos}</Text>
+                  <TouchableOpacity 
+                    style={styles.numberButton}
+                    onPress={() => {
+                      const currentValue = parseInt(formData.maxPhotos);
+                      setFormData({ ...formData, maxPhotos: String(currentValue + 1) });
+                    }}
+                  >
+                    <Ionicons name="add" size={24} color="#007AFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
         );
@@ -218,7 +246,7 @@ export default function CreateRequest() {
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={formData.reward}
-                  onValueChange={(value: number) => setFormData({ ...formData, reward: value })}
+                  onValueChange={(value: string) => setFormData({ ...formData, reward: value })}
                   style={styles.picker}
                 >
                   {rewardOptions.map((option) => (
@@ -262,7 +290,7 @@ export default function CreateRequest() {
               <View style={styles.reviewItem}>
                 <Text style={styles.reviewLabel}>Location:</Text>
                 <Text style={styles.reviewValue}>
-                  {formData.location === 6 
+                  {formData.location === '6' 
                     ? formData.customLocation 
                     : locations.find(loc => loc.id === formData.location)?.name}
                 </Text>
@@ -553,5 +581,64 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    marginHorizontal: -4,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F0F0F0',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  categoryChipSelected: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  categoryChipText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  categoryChipTextSelected: {
+    color: '#FFF',
+    fontWeight: '500',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  toggle: {
+    width: 51,
+    height: 31,
+    borderRadius: 15.5,
+    backgroundColor: '#E0E0E0',
+    padding: 2,
+  },
+  toggleActive: {
+    backgroundColor: '#007AFF',
+  },
+  toggleHandle: {
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleHandleActive: {
+    transform: [{ translateX: 20 }],
+  },
+  toggleLabel: {
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#333',
   },
 }); 
