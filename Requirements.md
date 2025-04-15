@@ -10,7 +10,6 @@ Ensure mobile-first experience with a clean, fast UI
 Apply AI filtering with an emphasis on metadata analysis
 Explore automatic photo matching with active requests via the Auto-Match feature
 
-
 A. Buyer Features
 Create Request
 Title, description

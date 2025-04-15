@@ -1,4 +1,4 @@
-import { StyleSheet, View, ScrollView, ImageBackground } from 'react-native';
+import { StyleSheet, View, ScrollView } from 'react-native';
 import { Text, Card, Button, useTheme } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -12,7 +12,7 @@ import PhotoValueReport from '../components/PhotoValueReport';
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
-export default function HomeScreen() {
+export default function ProfileScreen() {
   const theme = useTheme();
   const [userPhotos, setUserPhotos] = useState<PhotoMetadata[]>([]);
   const [potentialValue, setPotentialValue] = useState(0);
@@ -186,8 +186,8 @@ export default function HomeScreen() {
           <ScrollView style={styles.scrollView}>
             {/* Header */}
             <View style={[styles.header, styles.headerSpacing]}>
-              <Text variant="displaySmall" style={styles.title}>Captura</Text>
-              <Text variant="bodyLarge" style={styles.subtitle}>Your Photo Marketplace</Text>
+              <Text variant="displaySmall" style={styles.title}>My Profile</Text>
+              <Text variant="bodyLarge" style={styles.subtitle}>Manage your photos and earnings</Text>
             </View>
 
             {/* Stats Panel */}
@@ -236,6 +236,19 @@ export default function HomeScreen() {
                   onPress={handleUpload}
                 >
                   Upload Photos
+                </Button>
+                <Button 
+                  mode="contained" 
+                  style={styles.actionButton}
+                  contentStyle={styles.buttonContent}
+                  icon="logout"
+                  buttonColor="#ffffff"
+                  textColor="#6b4d8f"
+                  onPress={() => {
+                    // Handle logout
+                  }}
+                >
+                  Log Out
                 </Button>
               </View>
             </View>
@@ -350,4 +363,4 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     marginTop: 4,
   },
-});
+}); 
