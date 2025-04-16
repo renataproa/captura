@@ -14,10 +14,16 @@ export default function NavigationBar({ navigation, state }: BottomTabBarProps) 
       unfocusedIcon: 'home-outline',
     },
     { 
-      key: 'my-bids',
-      title: 'My Bids',
-      focusedIcon: 'image',
-      unfocusedIcon: 'image-outline',
+      key: 'my-requests',
+      title: 'My Requests',
+      focusedIcon: 'clipboard-list',
+      unfocusedIcon: 'clipboard-list-outline',
+    },
+    { 
+      key: 'my-uploads',
+      title: 'My Uploads',
+      focusedIcon: 'cloud-upload',
+      unfocusedIcon: 'cloud-upload-outline',
     },
     { 
       key: 'profile',

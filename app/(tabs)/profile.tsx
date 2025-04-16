@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import PhotoPicker from '../components/PhotoPicker';
-import ProfileSwitcher from '../components/ProfileSwitcher';
 import { useState, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { PhotoMetadata } from '../utils/photoMatching';
@@ -181,8 +180,6 @@ export default function ProfileScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.gradient}
         >
-          <ProfileSwitcher currentMode="seller" />
-          
           <ScrollView style={styles.scrollView}>
             {/* Header */}
             <View style={[styles.header, styles.headerSpacing]}>
@@ -211,7 +208,7 @@ export default function ProfileScreen() {
             <View style={styles.quickActions}>
               <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
               <View style={styles.actionButtons}>
-                <PhotoPicker />
+                <PhotoPicker onPhotosSelected={loadUserPhotos} />
                 <Button 
                   mode="contained" 
                   style={styles.actionButton}

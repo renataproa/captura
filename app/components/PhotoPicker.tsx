@@ -5,21 +5,14 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { format } from 'date-fns';
+import { PhotoMetadata } from '../utils/photoMatching';
 
-interface PhotoMetadata {
-  id: string;
-  uri: string;
-  location?: MediaLibrary.Location;
-  creationTime?: number;
-  selected: boolean;
-  filename?: string;
-  width?: number;
-  height?: number;
+interface PhotoPickerProps {
+  onPhotosSelected: (photos: PhotoMetadata[]) => void;
+  buttonLabel?: string;
 }
 
-type PhotoLoadResult = PhotoMetadata | null;
-
-export default function PhotoPicker() {
+export default function PhotoPicker({ onPhotosSelected, buttonLabel = "Select Photos" }: PhotoPickerProps) {
   const [permission, setPermission] = useState<MediaLibrary.PermissionResponse | null>(null);
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
   const [visible, setVisible] = useState(false);
@@ -62,29 +55,26 @@ export default function PhotoPicker() {
     try {
       const { assets } = await MediaLibrary.getAssetsAsync({
         mediaType: 'photo',
-        first: 20,
+        first: 50,
         sortBy: ['creationTime'],
       });
 
       const photosWithMetadata = await Promise.all(
         assets.map(async (asset) => {
           try {
-            // Get the asset info first
             const info = await MediaLibrary.getAssetInfoAsync(asset);
             
-            // Use the localUri from asset info
-            const localUri = info.localUri || asset.uri;
-
-            // Create photo metadata without processing
             const photoData: PhotoMetadata = {
               id: asset.id,
-              uri: localUri,
-              location: info.location,
-              creationTime: info.creationTime,
-              selected: false,
+              creationTime: new Date(info.creationTime),
               filename: info.filename,
+              location: info.location ? {
+                latitude: info.location.latitude,
+                longitude: info.location.longitude
+              } : undefined,
               width: asset.width,
-              height: asset.height
+              height: asset.height,
+              uri: Platform.OS === 'ios' ? info.uri : `file://${info.uri}`,
             };
 
             return photoData;
@@ -95,13 +85,8 @@ export default function PhotoPicker() {
         })
       );
 
-      // Filter out any failed loads and ensure type safety
       const validPhotos = photosWithMetadata.filter((photo): photo is PhotoMetadata => 
-        photo !== null && 
-        typeof photo === 'object' &&
-        'id' in photo &&
-        'uri' in photo &&
-        'selected' in photo
+        photo !== null
       );
       
       if (validPhotos.length === 0) {
@@ -118,72 +103,52 @@ export default function PhotoPicker() {
   };
 
   const togglePhotoSelection = (photo: PhotoMetadata) => {
-    const updatedPhotos = photos.map((p) => 
-      p.id === photo.id ? { ...p, selected: !p.selected } : p
-    );
-    setPhotos(updatedPhotos);
-    setSelectedPhotos(updatedPhotos.filter(p => p.selected));
+    const isSelected = selectedPhotos.some(p => p.id === photo.id);
+    if (isSelected) {
+      setSelectedPhotos(prev => prev.filter(p => p.id !== photo.id));
+    } else {
+      setSelectedPhotos(prev => [...prev, photo]);
+    }
   };
 
   const toggleSelectAll = () => {
     const newSelectAll = !selectAll;
     setSelectAll(newSelectAll);
-    const updatedPhotos = photos.map(photo => ({
-      ...photo,
-      selected: newSelectAll
-    }));
-    setPhotos(updatedPhotos);
-    setSelectedPhotos(newSelectAll ? updatedPhotos : []);
+    setSelectedPhotos(newSelectAll ? photos : []);
   };
 
   const handlePhotoSelect = () => {
-    // Process selected photos
-    const processedPhotos = selectedPhotos.map(photo => ({
-      ...photo,
-      formattedDate: photo.creationTime 
-        ? format(new Date(photo.creationTime), 'MMM dd, yyyy HH:mm')
-        : 'Unknown date',
-      resolution: photo.width && photo.height 
-        ? `${photo.width}x${photo.height}`
-        : 'Unknown resolution'
-    }));
-    
-    console.log('Processed photos:', processedPhotos);
+    onPhotosSelected(selectedPhotos);
     setVisible(false);
+    setSelectedPhotos([]);
+    setSelectAll(false);
   };
 
-  const renderPhoto = ({ item }: { item: PhotoMetadata }) => (
-    <TouchableOpacity
-      style={[styles.photoItem, item.selected && styles.selectedPhoto]}
-      onPress={() => togglePhotoSelection(item)}
-    >
-      <Image 
-        source={{ uri: item.uri }} 
-        style={styles.thumbnail}
-        resizeMode="cover"
-        onError={(error) => {
-          console.error('Image loading error:', error.nativeEvent.error);
-          // Update the photo's URI to use the asset URI as fallback
-          if (item.uri.startsWith('ph://')) {
-            const updatedPhotos = photos.map((p) => 
-              p.id === item.id ? { ...p, uri: `asset://${item.uri.slice(5)}` } : p
-            );
-            setPhotos(updatedPhotos);
-          }
-        }}
-      />
-      {item.selected && (
-        <View style={styles.checkmark}>
-          <Text style={styles.checkmarkText}>✓</Text>
-        </View>
-      )}
-      {item.location && (
-        <View style={styles.locationIndicator}>
-          <Text style={styles.locationIndicatorText}>📍</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+  const renderPhoto = ({ item }: { item: PhotoMetadata }) => {
+    const isSelected = selectedPhotos.some(p => p.id === item.id);
+    return (
+      <TouchableOpacity
+        style={[styles.photoItem, isSelected && styles.selectedPhoto]}
+        onPress={() => togglePhotoSelection(item)}
+      >
+        <Image 
+          source={{ uri: item.uri }} 
+          style={styles.thumbnail}
+          resizeMode="cover"
+        />
+        {isSelected && (
+          <View style={styles.checkmark}>
+            <Text style={styles.checkmarkText}>✓</Text>
+          </View>
+        )}
+        {item.location && (
+          <View style={styles.locationIndicator}>
+            <Text style={styles.locationIndicatorText}>📍</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View>
@@ -199,25 +164,27 @@ export default function PhotoPicker() {
         buttonColor="#ffffff"
         textColor="#6b4d8f"
       >
-        Select Photos
+        {buttonLabel}
       </Button>
 
       <Portal>
         <Modal
           visible={visible}
-          onDismiss={() => setVisible(false)}
+          onDismiss={() => {
+            setVisible(false);
+            setSelectedPhotos([]);
+            setSelectAll(false);
+          }}
           contentContainerStyle={styles.modal}
         >
           <View style={styles.modalContent}>
             {showDevBuildBanner && (
               <Banner
                 visible={true}
-                actions={[
-                  {
-                    label: 'Dismiss',
-                    onPress: () => setShowDevBuildBanner(false),
-                  }
-                ]}
+                actions={[{
+                  label: 'Dismiss',
+                  onPress: () => setShowDevBuildBanner(false),
+                }]}
               >
                 For full media library access on Android, please use a development build.
               </Banner>
@@ -235,10 +202,7 @@ export default function PhotoPicker() {
             </View>
 
             {error ? (
-              <Banner
-                visible={true}
-                icon="alert"
-              >
+              <Banner visible={true} icon="alert">
                 {error}
               </Banner>
             ) : (
@@ -254,7 +218,11 @@ export default function PhotoPicker() {
             <View style={styles.modalFooter}>
               <Button
                 mode="outlined"
-                onPress={() => setVisible(false)}
+                onPress={() => {
+                  setVisible(false);
+                  setSelectedPhotos([]);
+                  setSelectAll(false);
+                }}
                 style={styles.footerButton}
                 textColor="#6b4d8f"
               >

@@ -1,202 +1,102 @@
-Captura 
+## 🎯 **Captura Simplified Requirements Doc**
 
-Purpose
-Captura enables buyers (e.g., marketers, journalists) to issue time-sensitive photo requests and receive authentic, high-quality, location-relevant images from everyday users. Contributors are rewarded via coupons, crypto, or other incentives. This prototype aims to validate the core user flows on a mobile app before investing in a full-scale platform.
+### 🌟 **Purpose**
+Captura connects photo **requesters** (e.g., marketers, journalists) with everyday **contributors** who upload recent, high-quality, location-matched photos in exchange for rewards (e.g., coupons or crypto).
 
-Goals
-Enable a buyer to issue a photo request in under 2 minutes
-Allow users to view requests, upload images, and get rewarded
-Ensure mobile-first experience with a clean, fast UI
-Apply AI filtering with an emphasis on metadata analysis
-Explore automatic photo matching with active requests via the Auto-Match feature
+This prototype focuses on testing the **core mobile flows** before investing in full development.
 
-A. Buyer Features
-Create Request
-Title, description
-Location (map or city name)
-Expiration (e.g., “within 3 hours”)
-Max # of photos needed
-Reward per accepted photo (non-monetary in v0.1, e.g., coupon code)
-Browse Submissions
-AI-filtered gallery 
-Accept/reject photo
-Download accepted photo (optional in v0.1)
+---
 
-B. Contributor Features
-Browse Active Requests
-List view + map view
-Filter by proximity, category, reward
-Submit Photo
-Upload or take live photo
-Auto-tag location (GPS metadata)
-Optional caption
-See submission status
-Rewards System (Stubbed)
-Confirmation screen for accepted photos
-Simulate reward (e.g., “you earned a $5 voucher!”)
-Auto-Match Feature (Optional, Opt-In)
-Users can opt in to allow the app to scan recent photos periodically and automatically match them against open requests using metadata.
-Flow:
-User is prompted to enable Auto-Match on first login
-App runs periodic metadata scans (Android: background; iOS: on app open)
-If match is found, user receives in-app notification:
-“You have 2 recent photos that match a live request. Want to submit them?”
-User reviews the suggested matches and manually confirms upload
-Privacy & Security Safeguards:
-No photos are uploaded automatically
-Clear permission flow and ability to opt out at any time
-Compliant with platform-specific access (e.g., iOS Limited Photo Access)
+## 🧭 **Core Navigation (Bottom Tab Bar)**  
+1. **Home** – Browse all open photo requests (marketplace)  
+2. **My Requests** – Manage photo requests I created  
+3. **My Uploads** – Track my photo submissions  
+4. **Profile** – Manage account, photo access, and earnings
 
-AI Filter (Layered Approach)
-Step 1: Metadata Filter
-Check timestamp, GPS location, device info from EXIF metadata
-Only photos taken within a defined time window and geofence are retained
-Step 2: Description Match
-Use lightweight ML models (e.g., CLIP or similar) to compare image content to the buyer’s text description
-Score for thematic alignment (e.g., if buyer asked for "sunset over a city skyline")
-Step 3: Quality Scoring
-Filter for blurriness, exposure, framing, and subject clarity
-Optionally use open-source computer vision libraries or third-party APIs
-Step 4: Manual Review by Buyer
-Buyer sees filtered, ranked submissions and can accept/reject manually
-Helps build trust and ensures relevance
+---
 
+## 🧵 **User Flows**
 
-Demo React Native (Expo) Technical Specification
-Tech Stack
+### 1️⃣ Contributor Flow (Submitting Photos to a Request)
+**Path: Home ➝ View Details ➝ Auto-Matched Photos ➝ Submit ➝ AI Filter ➝ Approval**
 
-Frontend: React Native with Expo, Tailwind
-Backend: Firebase or Supabase or Node.js  
-Development Environment: Cursor AI code editor
-State Management: React Context API or Redux (simple implementation)
-Navigation: React Navigation
-UI Components: React Native Paper or NativeBase
-Icons: React Native Vector Icons
-Local Storage: AsyncStorage for persisting demo data
+#### Steps:
+1. Open **Home** tab → Browse open requests
+2. Tap **View Details** on a request card
+3. Captura shows **Auto-Matched Photos** based on EXIF metadata (location + date)
+4. User selects which photos to submit and taps **Submit**
+5. Captura runs an **AI Check**:
+   - Location + timestamp validation
+   - Visual match (e.g., CLIP model)
+   - Quality check (blurry, low light, etc.)
+6. Status changes to **Pending Approval**
+7. If approved by buyer → user is notified + receives reward 🎉
 
-Key Screens & Components
-1. Onboarding Flow
+---
 
-Splash screen with Captura logo
-Brief tutorial/walkthrough (3 screens max)
-Demo mode selection (Seller or Buyer)
+### 2️⃣ Buyer Flow (Creating and Managing a Request)
+**Path: My Requests ➝ Create New ➝ View Submissions ➝ Accept Photos**
 
-2. Seller Flow Screens
-Home/Dashboard
+#### Steps:
+1. Open **My Requests** tab
+2. Tap **Create Request**:
+   - Title, description
+   - Location
+   - Expiration time
+   - Reward range
+   - Max # of photos
+3. After submission, request appears as “Active”
+4. Tap a request → **View Submissions** (AI-filtered)
+5. Select and accept the photos you want
+6. Contributors are notified and rewarded
+7. You receive downloadable, authentic content 📸
 
-Summary stats panel (scanned photos, potential value)
-Quick action buttons (Scan Photos, View Report, Upload Photos)
-Recent activity feed (simulated)
+---
 
-Photo Scanner
+### 3️⃣ My Uploads
+**Track the status of your submitted photos**
+- See which bids you’ve submitted to
+- Status options:  
+  - Pending AI Check  
+  - Pending Buyer Approval  
+  - Accepted  
+  - Rejected
 
-Permission request for photo library access
-Scanning animation with progress indicator
-Results summary screen
+---
 
-Value Report
+### 4️⃣ Profile
+- Grant access to photo library
+- View total scanned photos & potential rewards
+- Upload photos manually (useful for web users)
+- View reports and recent activity
 
-Earnings potential card with price range
-Category breakdown with small charts
-"Top picks" horizontal scroll of high-value photos
-"View all valuable photos" button
+---
 
-Photo Selection Grid
+## 💡 **Key Features**
+- **Auto-Match Photos**: Uses metadata (location + time) to suggest submissions
+- **AI Filter**:
+  - Step 1: Metadata match
+  - Step 2: Visual relevance (text → image using CLIP or similar)
+  - Step 3: Quality check (exposure, blur, etc.)
+  - Step 4: Final manual approval by buyer
+- **Privacy-first**: No photos are auto-uploaded. Everything is permission-based.
 
-Thumbnail grid with value badge on each photo
-Multi-select functionality
-Bottom action bar (Upload Selected, Cancel)
-Filter/sort options (by value, date, category)
+---
 
-Upload Confirmation
+## 🛠️ **Tech Stack (Prototype)**
+- **Frontend**: React Native + Expo + Tailwind
+- **Backend**: Firebase / Supabase / Node.js
+- **Photo Metadata**: `expo-media-library`, `expo-location`, `expo-image-manipulator`
+- **AI Filtering**: Basic models for content & quality scoring
+- **Storage**: AsyncStorage (for demo)
 
-Selected photos summary
-Payment details
-Terms acceptance checkbox
-Upload button with loading state
+---
 
-3. Buyer Flow Screens
-Discover Feed
+## ✅ **Goals for the Prototype**
+- Allow buyers to issue a photo request in under 2 minutes  
+- Enable contributors to submit matched photos in a few taps  
+- Validate the Auto-Match and AI filter concepts  
+- Provide clean, fast, mobile-first UI
 
-Search bar with location and category filters
-Grid/list toggle view
-Photo cards with location, price and category tags
-
-Photo Request Form
-
-Step-by-step form with:
-
-Location selector (map integration)
-Category dropdown
-Price input with suggested ranges
-Description text area
-Expiration date picker
-Submit button
-
-
-
-Request Management
-
-Active requests list
-Request detail view
-Edit/cancel request functionality
-
-Implementation Notes for Expo/React Native
-Photo Library Integration
-
-Use expo-media-library for accessing device photos
-Extract metadata using expo-image-manipulator and expo-location
-All photo processing should happen locally (privacy)
-
-UI Performance Considerations
-
-Use FlatList with optimizations for photo grids
-Implement lazy loading for images
-Consider react-native-fast-image for better image performance
-
-Data Flow
-
-Mock API responses in JSON format
-Simulate network requests with timeouts
-Store demo data in AsyncStorage for persistence
-
-Location Services
-
-Implement with expo-location
-Include predefined location sets for demo
-Simulated geofencing for photo requests
-
-Development Plan
-Phase 1: Setup & Navigation
-
-Initialize Expo project
-Configure navigation structure
-Create placeholder screens
-Implement basic styling
-
-Phase 2: Core Seller Flow
-
-Implement photo library scanning simulation
-Create value report screen with mock data
-Build photo selection grid and upload confirmation
-
-Phase 3: Core Buyer Flow
-
-Develop discover feed with search functionality
-Build photo request form
-Create request management screens
-
-Phase 4: Polish & Demo Preparation
-
-Add animations and transitions
-Implement demo data reset functionality
-Optimize performance
-Create demo script with sample scenarios
-
-Demo Data Requirements
-
-Predefined set of 50-100 sample photos with metadata
-10-15 buyer request templates
-Sample value calculations for different photo types
-Simulated user profile data
+---
 

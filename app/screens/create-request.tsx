@@ -5,9 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme, SegmentedButtons, Chip, Searchbar, Button } from 'react-native-paper';
-import { mockRequests, PhotoRequest } from './index';
 import * as Location from 'expo-location';
 import debounce from 'lodash/debounce';
+import { PhotoRequest, addPhotoRequest } from '../utils/requestStore';
 
 // Categories from the buyer home screen
 const categories = ['Urban', 'Architecture', 'Campus', 'Nature', 'Events', 'Street Art'];
@@ -109,6 +109,29 @@ const formatDistance = (distance: number): string => {
   return `${distance.toFixed(1)} km`;
 };
 
+interface FormData extends Omit<PhotoRequest, 'id' | 'ownerId'> {
+  locationSearch?: string;
+  selectedLocation?: Location | null;
+}
+
+const initialFormData: FormData = {
+  title: '',
+  location: '',
+  category: '',
+  budget: '',
+  deadline: '',
+  description: '',
+  requirements: [],
+  preferredTimes: [],
+  additionalNotes: '',
+  matchedPhotos: 0,
+  status: 'active',
+  submissionCount: 0,
+  createdAt: new Date(),
+  locationSearch: '',
+  selectedLocation: null
+};
+
 export default function CreateRequest() {
   const router = useRouter();
   const theme = useTheme();
@@ -116,19 +139,7 @@ export default function CreateRequest() {
   const [currentStep, setCurrentStep] = useState(1);
   const [searchResults, setSearchResults] = useState<Location[]>([]);
   
-  const [formData, setFormData] = useState({
-    title: "Back Bay Urban Photography",
-    description: "Looking for high-quality urban photos of Back Bay area, similar to recent shots. Particularly interested in architectural details and street scenes.",
-    location: '',
-    customLocation: '',
-    locationSearch: '',
-    selectedLocation: null as Location | null,
-    categories: ['Urban'] as string[],
-    maxPhotos: '5',
-    budget: '200-300',
-    deadline: '3',
-    urgency: 'normal',
-  });
+  const [formData, setFormData] = useState<FormData>(initialFormData);
 
   const searchLocations = async (query: string) => {
     if (query.length < 2) {
@@ -216,25 +227,24 @@ export default function CreateRequest() {
   };
 
   const handleSubmit = () => {
-    const newRequest: PhotoRequest = {
-      id: (mockRequests.length + 1).toString(),
+    const newRequest: Omit<PhotoRequest, 'ownerId'> = {
+      id: Math.random().toString(36).substr(2, 9),
       title: formData.title,
-      description: formData.description,
-      location: formData.selectedLocation?.value || formData.locationSearch,
-      category: formData.categories.join(', '),
+      location: formData.selectedLocation?.value || formData.location,
+      category: formData.category,
       budget: formData.budget,
-      deadline: expirationOptions.find(opt => opt.value === formData.deadline)?.deadline || new Date().toISOString(),
-      urgency: formData.urgency as 'normal' | 'urgent',
-      responseCount: 0,
-      matchedPhotos: 0,
-      coordinates: formData.selectedLocation?.coordinates || {
-        latitude: 42.3601,
-        longitude: -71.0549
-      }
+      deadline: formData.deadline,
+      description: formData.description,
+      requirements: formData.requirements,
+      preferredTimes: formData.preferredTimes,
+      additionalNotes: formData.additionalNotes,
+      matchedPhotos: formData.matchedPhotos,
+      status: formData.status,
+      submissionCount: formData.submissionCount,
+      createdAt: formData.createdAt
     };
-
-    mockRequests.unshift(newRequest);
-    router.push('/(buyer)');
+    addPhotoRequest(newRequest);
+    router.back();
   };
 
   const renderStep = () => {
@@ -280,9 +290,9 @@ export default function CreateRequest() {
               <View style={styles.searchContainer}>
                 <Searchbar
                   placeholder="Search for a location"
-                  value={formData.locationSearch}
+                  value={formData.location}
                   onChangeText={(text) => {
-                    setFormData({ ...formData, locationSearch: text });
+                    setFormData({ ...formData, location: text });
                     if (text.length >= 2) {
                       debouncedSearch(text);
                     } else {
@@ -344,8 +354,8 @@ export default function CreateRequest() {
               <Text style={styles.label}>Maximum number of photos</Text>
               <View style={styles.pickerContainer}>
                 <Picker
-                  selectedValue={formData.maxPhotos}
-                  onValueChange={(value: string) => setFormData({ ...formData, maxPhotos: value })}
+                  selectedValue={formData.requirements.join(',')}
+                  onValueChange={(value: string) => setFormData({ ...formData, requirements: value.split(',') })}
                   style={styles.picker}
                 >
                   {['1', '3', '5', '10', '15', '20'].map((num) => (
@@ -392,18 +402,18 @@ export default function CreateRequest() {
               <View style={styles.reviewItem}>
                 <Text style={styles.reviewLabel}>Location:</Text>
                 <Text style={styles.reviewValue}>
-                  {formData.selectedLocation?.value || formData.locationSearch}
+                  {formData.selectedLocation?.value || formData.location}
                 </Text>
               </View>
               
               <View style={styles.reviewItem}>
                 <Text style={styles.reviewLabel}>Category:</Text>
-                <Text style={styles.reviewValue}>{formData.categories.join(', ')}</Text>
+                <Text style={styles.reviewValue}>{formData.category}</Text>
               </View>
               
               <View style={styles.reviewItem}>
                 <Text style={styles.reviewLabel}>Max Photos:</Text>
-                <Text style={styles.reviewValue}>{formData.maxPhotos}</Text>
+                <Text style={styles.reviewValue}>{formData.requirements.join(', ')}</Text>
               </View>
               
               <View style={styles.reviewItem}>
@@ -428,12 +438,12 @@ export default function CreateRequest() {
           <Chip
             key={category}
             mode="outlined"
-            selected={formData.categories.includes(category)}
+            selected={formData.requirements.includes(category)}
             onPress={() => {
-              const updatedCategories = formData.categories.includes(category)
-                ? formData.categories.filter(c => c !== category)
-                : [...formData.categories, category];
-              setFormData({ ...formData, categories: updatedCategories });
+              const updatedCategories = formData.requirements.includes(category)
+                ? formData.requirements.filter(c => c !== category)
+                : [...formData.requirements, category];
+              setFormData({ ...formData, requirements: updatedCategories });
             }}
             style={styles.categoryChipNew}
             selectedColor="#007AFF"
@@ -443,7 +453,7 @@ export default function CreateRequest() {
           </Chip>
         ))}
       </View>
-      {formData.categories.length === 0 && (
+      {formData.requirements.length === 0 && (
         <Text style={styles.categoryWarning}>Please select at least one category</Text>
       )}
     </View>
