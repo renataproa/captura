@@ -20,13 +20,13 @@ const mockRequests = [
   },
   {
     id: '2',
-    title: 'Fenway Park Game Day',
-    location: 'Fenway Park',
+    title: 'TD Garden Game Day',
+    location: 'TD Garden',
     category: 'Sports',
     budget: '$150-200',
     deadline: '1 week',
     matchedPhotos: 3,
-    description: 'Need photos from recent Red Sox games, focusing on crowd atmosphere.'
+    description: 'Need photos from recent Boston Celtics games, focusing on crowd atmosphere.'
   }
 ];
 
