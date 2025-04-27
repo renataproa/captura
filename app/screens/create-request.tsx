@@ -1,13 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme, SegmentedButtons, Chip, Searchbar, Button } from 'react-native-paper';
 import * as Location from 'expo-location';
 import debounce from 'lodash/debounce';
-import { PhotoRequest, addPhotoRequest } from '../utils/requestStore';
+import { PhotoRequest, addPhotoRequest, getRequestById, updatePhotoRequest } from '../utils/requestStore';
 
 // Categories from the buyer home screen
 const categories = ['Urban', 'Architecture', 'Campus', 'Nature', 'Events', 'Street Art'];
@@ -109,17 +109,36 @@ const formatDistance = (distance: number): string => {
   return `${distance.toFixed(1)} km`;
 };
 
-interface FormData extends Omit<PhotoRequest, 'id' | 'ownerId'> {
-  locationSearch?: string;
-  selectedLocation?: Location | null;
+interface FormData {
+  title: string;
+  location: string;
+  category: string;
+  rewards: string;
+  deadline: string;
+  description: string;
+  requirements: string[];
+  preferredTimes: string[];
+  additionalNotes: string;
+  matchedPhotos: number;
+  status: 'active' | 'completed' | 'expired';
+  submissionCount: number;
+  createdAt: Date;
+  locationSearch: string;
+  selectedLocation: Location | null;
+  requesterType: 'individual' | 'brand';
+  humanPresence: 'required' | 'not_allowed' | 'optional';
+  user: {
+    name: string;
+    avatar: any;
+  };
 }
 
 const initialFormData: FormData = {
   title: '',
   location: '',
-  category: '',
-  budget: '',
-  deadline: '',
+  category: 'Urban',
+  rewards: '$10 Coupon',
+  deadline: '3 days',
   description: '',
   requirements: [],
   preferredTimes: [],
@@ -129,17 +148,57 @@ const initialFormData: FormData = {
   submissionCount: 0,
   createdAt: new Date(),
   locationSearch: '',
-  selectedLocation: null
+  selectedLocation: null,
+  requesterType: 'individual',
+  humanPresence: 'optional',
+  user: {
+    name: 'Current User',
+    avatar: require('../../assets/images/avatar.png')
+  }
 };
 
 export default function CreateRequest() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const theme = useTheme();
+  
+  const isEditMode = params.mode === 'edit';
+  const requestId = params.id as string;
   
   const [currentStep, setCurrentStep] = useState(1);
   const [searchResults, setSearchResults] = useState<Location[]>([]);
   
   const [formData, setFormData] = useState<FormData>(initialFormData);
+
+  // Load existing request data if in edit mode
+  useEffect(() => {
+    if (isEditMode && requestId) {
+      const existingRequest = getRequestById(requestId);
+      if (existingRequest) {
+        // Convert the existing request to form data
+        setFormData({
+          title: existingRequest.title,
+          location: existingRequest.location,
+          category: existingRequest.category,
+          rewards: existingRequest.rewards,
+          deadline: existingRequest.deadline,
+          description: existingRequest.description,
+          requirements: existingRequest.requirements,
+          preferredTimes: existingRequest.preferredTimes || [],
+          additionalNotes: existingRequest.additionalNotes || '',
+          matchedPhotos: existingRequest.matchedPhotos,
+          status: existingRequest.status,
+          submissionCount: existingRequest.submissionCount,
+          createdAt: existingRequest.createdAt,
+          requesterType: existingRequest.requesterType,
+          humanPresence: existingRequest.humanPresence,
+          user: existingRequest.user,
+          locationSearch: existingRequest.location,
+          selectedLocation: null // We don't have the exact location object
+        });
+      }
+    }
+  }, [isEditMode, requestId]);
 
   const searchLocations = async (query: string) => {
     if (query.length < 2) {
@@ -227,24 +286,80 @@ export default function CreateRequest() {
   };
 
   const handleSubmit = () => {
-    const newRequest: Omit<PhotoRequest, 'ownerId'> = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: formData.title,
-      location: formData.selectedLocation?.value || formData.location,
-      category: formData.category,
-      budget: formData.budget,
-      deadline: formData.deadline,
-      description: formData.description,
-      requirements: formData.requirements,
-      preferredTimes: formData.preferredTimes,
-      additionalNotes: formData.additionalNotes,
-      matchedPhotos: formData.matchedPhotos,
-      status: formData.status,
-      submissionCount: formData.submissionCount,
-      createdAt: formData.createdAt
-    };
-    addPhotoRequest(newRequest);
-    router.back();
+    if (isEditMode && requestId) {
+      // Update existing request
+      const existingRequest = getRequestById(requestId);
+      if (!existingRequest) return;
+      
+      const updatedRequest: PhotoRequest = {
+        ...existingRequest,
+        title: formData.title,
+        location: formData.selectedLocation ? formData.selectedLocation.value : formData.location,
+        category: formData.category,
+        rewards: formData.rewards,
+        deadline: formData.deadline,
+        description: formData.description,
+        requirements: Array.isArray(formData.requirements) && formData.requirements.length > 0 
+          ? formData.requirements 
+          : ['No specific requirements'],
+        preferredTimes: formData.preferredTimes && formData.preferredTimes.length > 0 
+          ? formData.preferredTimes 
+          : ['Anytime'],
+        additionalNotes: formData.additionalNotes || 'No additional notes',
+        status: formData.status,
+        humanPresence: formData.humanPresence,
+        requesterType: formData.requesterType,
+        user: formData.user
+      };
+      
+      updatePhotoRequest(updatedRequest);
+      router.push("/(tabs)/my-requests");
+    } else {
+      // Format the rewards value
+      let rewardsValue = formData.rewards;
+      if (typeof rewardsValue === 'string') {
+        // If it's a coupon value, make sure it's formatted correctly
+        if (!rewardsValue.includes('Coupon')) {
+          rewardsValue = `${rewardsValue} Coupon`;
+        }
+        
+        // Make sure it has a $ sign if it's a number
+        if (!rewardsValue.includes('$')) {
+          rewardsValue = `$${rewardsValue}`;
+        }
+      }
+      
+      // Create new request
+      const newRequest: Omit<PhotoRequest, 'ownerId'> = {
+        id: Math.random().toString(36).substr(2, 9),
+        title: formData.title,
+        location: formData.selectedLocation ? formData.selectedLocation.value : formData.location,
+        category: formData.category,
+        rewards: rewardsValue,
+        deadline: formData.deadline,
+        description: formData.description || 'No description provided',
+        requirements: Array.isArray(formData.requirements) && formData.requirements.length > 0 
+          ? formData.requirements 
+          : ['No specific requirements'],
+        preferredTimes: formData.preferredTimes && formData.preferredTimes.length > 0 
+          ? formData.preferredTimes 
+          : ['Anytime'],
+        additionalNotes: formData.additionalNotes || 'No additional notes',
+        matchedPhotos: 0,
+        status: 'active',
+        submissionCount: 0,
+        createdAt: new Date(),
+        requesterType: formData.requesterType,
+        humanPresence: formData.humanPresence,
+        user: {
+          name: 'Current User',
+          avatar: require('../../assets/images/avatar.png')
+        }
+      };
+      
+      addPhotoRequest(newRequest);
+      router.push("/(tabs)/my-requests");
+    }
   };
 
   const renderStep = () => {
@@ -366,16 +481,18 @@ export default function CreateRequest() {
             </View>
             
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Budget Range</Text>
+              <Text style={styles.label}>Rewards</Text>
               <View style={styles.pickerContainer}>
                 <Picker
-                  selectedValue={formData.budget}
-                  onValueChange={(value: string) => setFormData({ ...formData, budget: value })}
                   style={styles.picker}
+                  selectedValue={formData.rewards}
+                  onValueChange={(value: string) => setFormData({ ...formData, rewards: value })}
                 >
-                  {rewardOptions.map((option) => (
-                    <Picker.Item key={option.value} label={option.label} value={option.value} />
-                  ))}
+                  <Picker.Item label="$10 Coupon" value="$10 Coupon" />
+                  <Picker.Item label="$15 Coupon" value="$15 Coupon" />
+                  <Picker.Item label="$20 Coupon" value="$20 Coupon" />
+                  <Picker.Item label="$25 Coupon" value="$25 Coupon" />
+                  <Picker.Item label="$30 Coupon" value="$30 Coupon" />
                 </Picker>
               </View>
             </View>
@@ -417,8 +534,8 @@ export default function CreateRequest() {
               </View>
               
               <View style={styles.reviewItem}>
-                <Text style={styles.reviewLabel}>Budget:</Text>
-                <Text style={styles.reviewValue}>{formData.budget}</Text>
+                <Text style={styles.reviewLabel}>Rewards:</Text>
+                <Text style={styles.reviewValue}>{formData.rewards}</Text>
               </View>
             </View>
           </View>
@@ -461,6 +578,11 @@ export default function CreateRequest() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <Stack.Screen options={{ 
+        headerShown: false,
+        title: ''
+      }} />
+      
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#000" />

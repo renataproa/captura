@@ -4,74 +4,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Stack } from 'expo-router';
+import { 
+  getSubmissionsForRequest, 
+  updateSubmissionStatus, 
+  getRequestById,
+  PhotoSubmission
+} from '../utils/requestStore';
 
-interface PhotoSubmission {
-  id: string;
-  photographerId: string;
-  photographerName: string;
-  photoUrl: string;
-  submittedAt: Date;
-  status: 'pending' | 'approved' | 'rejected';
-  price: number;
-  metadata: {
-    location: string;
-    takenAt: Date;
-    resolution: string;
-  };
-}
-
-const mockSubmissions: PhotoSubmission[] = [
-  {
-    id: '1',
-    photographerId: 'photo1',
-    photographerName: 'John Smith',
-    photoUrl: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae',
-    submittedAt: new Date(),
-    status: 'pending',
-    price: 250,
-    metadata: {
-      location: 'Boston Public Garden',
-      takenAt: new Date(),
-      resolution: '4000x3000'
-    }
-  },
-  {
-    id: '2',
-    photographerId: 'photo2',
-    photographerName: 'Emma Davis',
-    photoUrl: 'https://images.unsplash.com/photo-1560750588-73207b1ef5b8',
-    submittedAt: new Date(),
-    status: 'approved',
-    price: 300,
-    metadata: {
-      location: 'Boston Public Garden',
-      takenAt: new Date(),
-      resolution: '3840x2160'
-    }
-  },
-  {
-    id: '3',
-    photographerId: 'photo3',
-    photographerName: 'Michael Chen',
-    photoUrl: 'https://images.unsplash.com/photo-1576843776838-032ac46fbb93',
-    submittedAt: new Date(),
-    status: 'pending',
-    price: 275,
-    metadata: {
-      location: 'Boston Public Garden',
-      takenAt: new Date(),
-      resolution: '4096x2160'
-    }
-  }
-];
-
+// Status helper functions
 const getStatusColor = (status: PhotoSubmission['status']) => {
   switch (status) {
-    case 'pending':
+    case 'pending_ai':
+      return '#6b7280';
+    case 'pending_approval':
       return '#f59e0b';
-    case 'approved':
+    case 'accepted':
       return '#10b981';
     case 'rejected':
       return '#ef4444';
@@ -82,14 +31,16 @@ const getStatusColor = (status: PhotoSubmission['status']) => {
 
 const getStatusLabel = (status: PhotoSubmission['status']) => {
   switch (status) {
-    case 'pending':
-      return 'Pending Review';
-    case 'approved':
+    case 'pending_ai':
+      return 'Processing';
+    case 'pending_approval':
+      return 'Pending';
+    case 'accepted':
       return 'Approved';
     case 'rejected':
       return 'Rejected';
     default:
-      return status;
+      return 'Unknown';
   }
 };
 
@@ -97,19 +48,42 @@ export default function RequestSubmissionsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { requestId } = useLocalSearchParams();
-  const [submissions, setSubmissions] = useState<PhotoSubmission[]>(mockSubmissions);
+  const [submissions, setSubmissions] = useState<PhotoSubmission[]>([]);
+  const [request, setRequest] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (requestId) {
+      // Fetch the request details
+      const requestData = getRequestById(requestId as string);
+      setRequest(requestData);
+      
+      // Fetch submissions for this request
+      const submissionsData = getSubmissionsForRequest(requestId as string);
+      setSubmissions(submissionsData);
+    }
+    setLoading(false);
+  }, [requestId]);
 
   const handleApprove = (submissionId: string) => {
+    // Update submission status in the store
+    updateSubmissionStatus(submissionId, 'accepted');
+    
+    // Update local state
     setSubmissions(prev => 
       prev.map(sub => 
         sub.id === submissionId 
-          ? { ...sub, status: 'approved' } 
+          ? { ...sub, status: 'accepted' } 
           : sub
       )
     );
   };
 
   const handleReject = (submissionId: string) => {
+    // Update submission status in the store
+    updateSubmissionStatus(submissionId, 'rejected');
+    
+    // Update local state
     setSubmissions(prev => 
       prev.map(sub => 
         sub.id === submissionId 
@@ -125,7 +99,7 @@ export default function RequestSubmissionsScreen() {
         <View style={styles.submissionHeader}>
           <View style={styles.photographerInfo}>
             <Text variant="titleMedium" style={styles.photographerName}>
-              {submission.photographerName}
+              Photographer #{submission.id.slice(-4)}
             </Text>
             <Chip 
               style={[
@@ -138,12 +112,12 @@ export default function RequestSubmissionsScreen() {
             </Chip>
           </View>
           <Text variant="titleLarge" style={styles.price}>
-            ${submission.price}
+            ${Math.floor(Math.random() * 20) + 10} Coupon
           </Text>
         </View>
 
         <Image
-          source={{ uri: submission.photoUrl }}
+          source={{ uri: submission.photoUri }}
           style={styles.submissionImage}
           resizeMode="cover"
         />
@@ -152,24 +126,24 @@ export default function RequestSubmissionsScreen() {
           <View style={styles.metadataItem}>
             <Text variant="labelSmall">Location</Text>
             <Text variant="bodyMedium" style={styles.metadataValue}>
-              {submission.metadata.location}
+              {submission.location}
             </Text>
           </View>
           <View style={styles.metadataItem}>
             <Text variant="labelSmall">Taken</Text>
             <Text variant="bodyMedium" style={styles.metadataValue}>
-              {submission.metadata.takenAt.toLocaleDateString()}
+              {submission.metadata?.creationTime.toLocaleDateString() || 'Unknown'}
             </Text>
           </View>
           <View style={styles.metadataItem}>
             <Text variant="labelSmall">Resolution</Text>
             <Text variant="bodyMedium" style={styles.metadataValue}>
-              {submission.metadata.resolution}
+              {submission.metadata ? `${submission.metadata.width}x${submission.metadata.height}` : 'Unknown'}
             </Text>
           </View>
         </View>
 
-        {submission.status === 'pending' && (
+        {submission.status === 'pending_approval' && (
           <View style={styles.actions}>
             <Button 
               mode="outlined" 
@@ -193,6 +167,14 @@ export default function RequestSubmissionsScreen() {
     </Card>
   );
 
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text>Loading submissions...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -215,7 +197,9 @@ export default function RequestSubmissionsScreen() {
             >
               Back
             </Button>
-            <Text variant="headlineSmall" style={styles.title}>Submissions</Text>
+            <Text variant="headlineSmall" style={styles.title}>
+              {request ? `${request.title} - Submissions` : 'Submissions'}
+            </Text>
           </View>
 
           <ScrollView style={styles.scrollView}>
@@ -231,7 +215,7 @@ export default function RequestSubmissionsScreen() {
                 </View>
                 <View style={styles.statItem}>
                   <Text variant="headlineMedium" style={styles.statNumber}>
-                    {submissions.filter(s => s.status === 'pending').length}
+                    {submissions.filter(s => s.status === 'pending_approval').length}
                   </Text>
                   <Text variant="bodySmall" style={styles.statLabel}>
                     Pending
@@ -239,7 +223,7 @@ export default function RequestSubmissionsScreen() {
                 </View>
                 <View style={styles.statItem}>
                   <Text variant="headlineMedium" style={styles.statNumber}>
-                    {submissions.filter(s => s.status === 'approved').length}
+                    {submissions.filter(s => s.status === 'accepted').length}
                   </Text>
                   <Text variant="bodySmall" style={styles.statLabel}>
                     Approved
@@ -247,7 +231,15 @@ export default function RequestSubmissionsScreen() {
                 </View>
               </View>
 
-              {submissions.map(renderSubmission)}
+              {submissions.length > 0 ? (
+                submissions.map(renderSubmission)
+              ) : (
+                <Card style={styles.emptyCard}>
+                  <Card.Content>
+                    <Text style={styles.emptyText}>No submissions yet for this request</Text>
+                  </Card.Content>
+                </Card>
+              )}
             </View>
           </ScrollView>
         </LinearGradient>
@@ -279,6 +271,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#ffffff',
     fontWeight: '600',
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -329,7 +322,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   price: {
-    color: '#10b981',
+    color: '#6b4d8f',
     fontWeight: '600',
   },
   submissionImage: {
@@ -369,5 +362,16 @@ const styles = StyleSheet.create({
   },
   rejectButton: {
     borderColor: '#ef4444',
+  },
+  emptyCard: {
+    padding: 24,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#6b7280',
+    fontSize: 16,
+    textAlign: 'center',
   },
 }); 

@@ -21,7 +21,7 @@ export default function NavigationBar({ navigation, state }: BottomTabBarProps) 
     },
     { 
       key: 'my-uploads',
-      title: 'My Uploads',
+      title: 'Submitted',
       focusedIcon: 'cloud-upload',
       unfocusedIcon: 'cloud-upload-outline',
     },

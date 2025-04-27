@@ -40,7 +40,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="my-uploads"
           options={{
-            title: 'My Uploads',
+            title: 'My Submissions',
             href: '/(tabs)/my-uploads',
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="cloud-upload" size={size} color={color} />

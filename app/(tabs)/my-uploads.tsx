@@ -1,40 +1,14 @@
-import { StyleSheet, View, ScrollView, FlatList, Platform } from 'react-native';
+import { StyleSheet, View, ScrollView, FlatList, Platform, Image } from 'react-native';
 import { Text, Card, Button, Chip, useTheme, Surface } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'expo-router';
+import { getMySubmissions, PhotoSubmission, subscribeToRequests } from '../utils/requestStore';
 
-interface PhotoUpload {
-  id: string;
-  requestTitle: string;
-  status: 'pending_ai' | 'pending_approval' | 'accepted' | 'rejected';
-  timestamp: Date;
-  location: string;
-  category: string;
-}
-
-// Mock data for uploads
-const mockUploads: PhotoUpload[] = [
-  {
-    id: '1',
-    requestTitle: 'Charles River Rowing',
-    status: 'pending_approval',
-    timestamp: new Date(),
-    location: 'Charles River',
-    category: 'Sports',
-  },
-  {
-    id: '2',
-    requestTitle: 'Beacon Hill Streets',
-    status: 'accepted',
-    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    location: 'Beacon Hill',
-    category: 'Architecture',
-  },
-];
-
-const getStatusColor = (status: PhotoUpload['status']) => {
+// Define status color and label functions
+const getStatusColor = (status: PhotoSubmission['status']) => {
   switch (status) {
     case 'pending_ai':
       return '#f59e0b';
@@ -49,7 +23,7 @@ const getStatusColor = (status: PhotoUpload['status']) => {
   }
 };
 
-const getStatusLabel = (status: PhotoUpload['status']) => {
+const getStatusLabel = (status: PhotoSubmission['status']) => {
   switch (status) {
     case 'pending_ai':
       return 'Pending AI Check';
@@ -68,24 +42,33 @@ const categories = ['All', 'Pending', 'Accepted', 'Rejected'];
 
 export default function MyUploadsScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [submissions, setSubmissions] = useState<PhotoSubmission[]>(getMySubmissions());
 
-  const filteredUploads = selectedCategory === 'All' 
-    ? mockUploads 
-    : mockUploads.filter(upload => {
+  useEffect(() => {
+    // Subscribe to updates in the submissions
+    const unsubscribe = subscribeToRequests(() => {
+      setSubmissions(getMySubmissions());
+    });
+    
+    return () => unsubscribe();
+  }, []);
+
+  const filteredSubmissions = selectedCategory === 'All' 
+    ? submissions 
+    : submissions.filter(submission => {
         if (selectedCategory === 'Pending') {
-          return upload.status === 'pending_ai' || upload.status === 'pending_approval';
+          return submission.status === 'pending_ai' || submission.status === 'pending_approval';
         }
-        return upload.status.toLowerCase() === selectedCategory.toLowerCase();
+        return submission.status.toLowerCase() === selectedCategory.toLowerCase();
       });
 
-  const renderUpload = ({ item }: { item: PhotoUpload }) => (
+  const renderSubmission = ({ item }: { item: PhotoSubmission }) => (
     <Card style={styles.requestCard} mode="elevated">
       <Card.Content>
-        <Text variant="titleMedium" style={styles.requestTitle}>{item.requestTitle}</Text>
-        <View style={styles.requestMeta}>
-          <Chip icon="map-marker" style={styles.chip}>{item.location}</Chip>
-          <Chip icon="tag" style={styles.chip}>{item.category}</Chip>
+        <View style={styles.submissionHeader}>
+          <Text variant="titleMedium" style={styles.requestTitle}>{item.requestTitle}</Text>
           <Chip 
             style={[
               styles.statusChip,
@@ -96,6 +79,20 @@ export default function MyUploadsScreen() {
             {getStatusLabel(item.status)}
           </Chip>
         </View>
+        
+        <View style={styles.photoPreviewContainer}>
+          <Image 
+            source={{ uri: item.photoUri }} 
+            style={styles.photoPreview}
+            resizeMode="cover"
+          />
+        </View>
+        
+        <View style={styles.requestMeta}>
+          <Chip icon="map-marker" style={styles.chip}>{item.location}</Chip>
+          <Chip icon="tag" style={styles.chip}>{item.category}</Chip>
+        </View>
+        
         <View style={styles.requestDetails}>
           <View style={styles.detailItem}>
             <Text variant="labelSmall">Submitted</Text>
@@ -103,17 +100,27 @@ export default function MyUploadsScreen() {
               {new Date(item.timestamp).toLocaleDateString()}
             </Text>
           </View>
-          <View style={styles.detailItem}>
-            <Text variant="labelSmall">Status</Text>
-            <Text 
-              variant="bodyMedium" 
-              style={[styles.detailValue, { color: getStatusColor(item.status) }]}
-            >
-              {getStatusLabel(item.status)}
-            </Text>
-          </View>
+          {item.metadata && (
+            <View style={styles.detailItem}>
+              <Text variant="labelSmall">Resolution</Text>
+              <Text variant="bodyMedium" style={styles.detailValue}>
+                {item.metadata.width}x{item.metadata.height}
+              </Text>
+            </View>
+          )}
         </View>
       </Card.Content>
+      <Card.Actions>
+        <Button 
+          mode="contained" 
+          onPress={() => router.push({
+            pathname: "/screens/request-details",
+            params: { id: item.requestId }
+          })}
+        >
+          View Request
+        </Button>
+      </Card.Actions>
     </Card>
   );
 
@@ -128,7 +135,7 @@ export default function MyUploadsScreen() {
           style={styles.gradient}
         >
           <View style={styles.header}>
-            <Text variant="headlineMedium" style={styles.title}>My Uploads</Text>
+            <Text variant="headlineMedium" style={styles.title}>My Submissions</Text>
           </View>
 
           <Surface style={styles.categoriesContainer} elevation={0}>
@@ -152,13 +159,26 @@ export default function MyUploadsScreen() {
           </Surface>
 
           <View style={styles.listContainer}>
-            <FlatList
-              data={filteredUploads}
-              renderItem={renderUpload}
-              keyExtractor={item => item.id}
-              contentContainerStyle={styles.requestsList}
-              showsVerticalScrollIndicator={false}
-            />
+            {filteredSubmissions.length > 0 ? (
+              <FlatList
+                data={filteredSubmissions}
+                renderItem={renderSubmission}
+                keyExtractor={item => item.id}
+                contentContainerStyle={styles.requestsList}
+                showsVerticalScrollIndicator={false}
+              />
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text variant="titleMedium" style={styles.emptyText}>
+                  No submissions found
+                </Text>
+                <Text variant="bodyMedium" style={styles.emptySubtext}>
+                  {selectedCategory !== 'All' 
+                    ? `No ${selectedCategory.toLowerCase()} submissions`
+                    : 'Submit photos for photo requests to see them here'}
+                </Text>
+              </View>
+            )}
           </View>
         </LinearGradient>
       </SafeAreaView>
@@ -211,10 +231,27 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
   },
+  submissionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   requestTitle: {
     color: '#6b4d8f',
     fontWeight: '600',
-    marginBottom: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  photoPreviewContainer: {
+    marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  photoPreview: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#f0f0f0',
   },
   requestMeta: {
     flexDirection: 'row',
@@ -237,10 +274,27 @@ const styles = StyleSheet.create({
   },
   detailItem: {
     alignItems: 'center',
+    flex: 1,
   },
   detailValue: {
     color: '#6b4d8f',
     fontWeight: '500',
     marginTop: 4,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyText: {
+    color: '#ffffff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    color: '#ffffff',
+    opacity: 0.8,
+    textAlign: 'center',
   },
 }); 

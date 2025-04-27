@@ -3,7 +3,7 @@ export interface PhotoRequest {
   title: string;
   location: string;
   category: string;
-  budget: string;
+  rewards: string;
   deadline: string;
   description: string;
   requirements: string[];
@@ -17,7 +17,7 @@ export const mockRequests: Record<string, PhotoRequest> = {
     title: 'Harvard Square Photos',
     location: 'Harvard Square',
     category: 'Urban',
-    budget: '$200-300',
+    rewards: '$200-300',
     deadline: '3 days',
     description: 'Looking for recent photos of Harvard Square area, especially around the main intersection and Harvard Yard.',
     requirements: [
@@ -35,7 +35,7 @@ export const mockRequests: Record<string, PhotoRequest> = {
     title: 'Museum of Science Area',
     location: 'Museum of Science',
     category: 'Architecture',
-    budget: '$150-200',
+    rewards: '$150-200',
     deadline: '1 week',
     description: 'Need photos from the Museum of Science area, focusing on the building and Charles River views.',
     requirements: [
